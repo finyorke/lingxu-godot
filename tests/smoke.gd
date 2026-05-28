@@ -22,6 +22,7 @@ func _init() -> void:
 		"res://assets/enemies/serpent_boss.png",
 		"res://assets/enemies/sword_demon.png",
 		"res://assets/weapons/weapon_icons.png",
+		"res://assets/ui/offer_icons.png",
 		"res://assets/fx/combat_fx.png",
 		"res://assets/fonts/NotoSansCJKsc-Regular.otf"
 	]
@@ -30,6 +31,12 @@ func _init() -> void:
 			failures.append("missing asset %s" % path)
 	if not ResourceLoader.exists("res://Scenes/Main.tscn"):
 		failures.append("main scene missing")
+	var asset_db = load("res://Scripts/autoload/AssetDB.gd").new()
+	root.add_child(asset_db)
+	asset_db.load_manifest()
+	for id in ["offer_guanri_sword", "offer_hantan_sword", "offer_turtle_charm", "offer_blood_return"]:
+		if not asset_db.manifest.has(id):
+			failures.append("missing market offer icon manifest entry %s" % id)
 	if failures.is_empty():
 		print("SMOKE OK: data, CJK font, generated assets, and main scene are present.")
 		quit(0)

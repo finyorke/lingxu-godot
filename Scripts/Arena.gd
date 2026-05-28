@@ -5,6 +5,22 @@ signal run_ended(result)
 const PLAYER_SCENE := preload("res://Scenes/Player/Player.tscn")
 const ENEMY_SCENE := preload("res://Scenes/Enemies/Enemy.tscn")
 const PROJECTILE_SCENE := preload("res://Scenes/Weapon/Projectile.tscn")
+const HUD_STAT_DEFS := [
+	{"key": "damage_pct", "label": "全伤", "icon": "fx_crit"},
+	{"key": "metal_damage_pct", "label": "金伤", "icon": "icon_metal"},
+	{"key": "wood_damage_pct", "label": "木伤", "icon": "icon_wood"},
+	{"key": "water_damage_pct", "label": "水伤", "icon": "icon_water"},
+	{"key": "fire_damage_pct", "label": "火伤", "icon": "icon_fire"},
+	{"key": "earth_damage_pct", "label": "土伤", "icon": "icon_earth"},
+	{"key": "crit_chance", "label": "暴击", "icon": "icon_crit"},
+	{"key": "dodge", "label": "身法", "icon": "offer_frost_pendant"},
+	{"key": "armor", "label": "护甲", "icon": "offer_thick_earth_armor"},
+	{"key": "speed_pct", "label": "移速", "icon": "offer_swift_talisman"},
+	{"key": "attack_speed", "label": "攻速", "icon": "offer_stat_attack_speed"},
+	{"key": "range_pct", "label": "范围", "icon": "offer_stat_range"},
+	{"key": "lifesteal", "label": "噬灵", "icon": "offer_bloodlust_jade"},
+	{"key": "luck", "label": "气运", "icon": "offer_lucky_coin"}
+]
 
 var player: YunxiPlayer
 var enemies: Array = []
@@ -30,6 +46,11 @@ var xp_bar: ProgressBar
 var info_label: Label
 var stats_label: Label
 var weapon_label: Label
+var hp_value_label: Label
+var shield_value_label: Label
+var xp_value_label: Label
+var weapon_slot_buttons: Array = []
+var stat_icon_buttons: Array = []
 var message_label: Label
 
 func _ready() -> void:
@@ -96,26 +117,43 @@ func _setup_hud() -> void:
 	shield_bar = _bar(Color("#5aa9e0"))
 	xp_bar = _bar(Color("#5fe0c8"))
 	bars.add_child(hp_bar)
+	hp_value_label = _bar_value_label(hp_bar)
 	bars.add_child(shield_bar)
+	shield_value_label = _bar_value_label(shield_bar)
 	bars.add_child(xp_bar)
+	xp_value_label = _bar_value_label(xp_bar)
 	info_label = Label.new()
 	info_label.custom_minimum_size = Vector2(460, 90)
 	info_label.add_theme_font_size_override("font_size", 25)
 	info_label.add_theme_color_override("font_color", Color("#eaf6ff"))
 	top.add_child(info_label)
-	weapon_label = Label.new()
-	weapon_label.custom_minimum_size = Vector2(520, 90)
-	weapon_label.add_theme_font_size_override("font_size", 21)
-	weapon_label.add_theme_color_override("font_color", Color("#f4ecd8"))
-	top.add_child(weapon_label)
-	stats_label = Label.new()
-	stats_label.anchor_left = 0.02
-	stats_label.anchor_top = 0.82
-	stats_label.anchor_right = 0.98
-	stats_label.anchor_bottom = 0.98
-	stats_label.add_theme_font_size_override("font_size", 20)
-	stats_label.add_theme_color_override("font_color", Color("#eaf6ff"))
-	root.add_child(stats_label)
+	var weapon_panel := PanelContainer.new()
+	weapon_panel.custom_minimum_size = Vector2(370, 90)
+	weapon_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.02, 0.04, 0.045, 0.72), Color("#5fe0c8"), 1, 6))
+	top.add_child(weapon_panel)
+	var weapon_slots := HBoxContainer.new()
+	weapon_slots.add_theme_constant_override("separation", 10)
+	weapon_panel.add_child(weapon_slots)
+	weapon_slot_buttons.clear()
+	for i in range(4):
+		var slot := _hud_icon_button(Vector2(80, 80))
+		weapon_slots.add_child(slot)
+		weapon_slot_buttons.append(slot)
+	var stat_panel := PanelContainer.new()
+	stat_panel.anchor_left = 0.02
+	stat_panel.anchor_top = 0.84
+	stat_panel.anchor_right = 0.98
+	stat_panel.anchor_bottom = 0.96
+	stat_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.018, 0.032, 0.038, 0.76), Color("#5fe0c8"), 1, 6))
+	root.add_child(stat_panel)
+	var stat_slots := HBoxContainer.new()
+	stat_slots.add_theme_constant_override("separation", 9)
+	stat_panel.add_child(stat_slots)
+	stat_icon_buttons.clear()
+	for def in HUD_STAT_DEFS:
+		var stat_button := _hud_icon_button(Vector2(52, 52))
+		stat_slots.add_child(stat_button)
+		stat_icon_buttons.append({"button": stat_button, "def": def})
 	message_label = Label.new()
 	message_label.anchor_left = 0.27
 	message_label.anchor_top = 0.38
@@ -143,6 +181,44 @@ func _bar(color: Color) -> ProgressBar:
 	b.add_theme_stylebox_override("fill", fill)
 	b.add_theme_stylebox_override("background", bg)
 	return b
+
+func _bar_value_label(bar: ProgressBar) -> Label:
+	var label := Label.new()
+	label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", Color("#fff8e8"))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(label)
+	return label
+
+func _hud_icon_button(size: Vector2) -> Button:
+	var b := Button.new()
+	b.custom_minimum_size = size
+	b.text = ""
+	b.expand_icon = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_HELP
+	b.add_theme_stylebox_override("normal", _stylebox(Color(0.03, 0.055, 0.06, 0.9), Color(0.35, 0.88, 0.82, 0.34), 1, 5))
+	b.add_theme_stylebox_override("hover", _stylebox(Color(0.05, 0.09, 0.1, 0.96), Color("#e8b259"), 2, 5))
+	b.add_theme_stylebox_override("pressed", _stylebox(Color(0.08, 0.1, 0.09, 0.98), Color("#e8b259"), 2, 5))
+	return b
+
+func _stylebox(bg: Color, border: Color, border_width: int, radius: int) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = bg
+	box.border_color = border
+	box.set_border_width_all(border_width)
+	box.corner_radius_top_left = radius
+	box.corner_radius_top_right = radius
+	box.corner_radius_bottom_left = radius
+	box.corner_radius_bottom_right = radius
+	box.content_margin_left = 8
+	box.content_margin_right = 8
+	box.content_margin_top = 6
+	box.content_margin_bottom = 6
+	return box
 
 func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("pause") and not market_open:
@@ -549,13 +625,13 @@ func _roll_offers(count: int) -> Array:
 		var w := ConfigDB.entry("weapons", id)
 		if bool(w.get("legendary", false)) and GameState.realm != "huashen":
 			continue
-		pool.append({"kind": "weapon", "id": id, "name": w.get("name", id), "summary": "%s法器 · %s伤害 %.0f" % [GameState.root_name(w.get("element", "")), w.get("class", ""), float(w.get("base_damage", 0))], "art_id": w.get("art_id", "icon_metal")})
+		pool.append({"kind": "weapon", "id": id, "name": w.get("name", id), "summary": "%s法器 · %s伤害 %.0f" % [GameState.root_name(w.get("element", "")), w.get("class", ""), float(w.get("base_damage", 0))], "art_id": _offer_art_id(id), "data": w})
 	for id in GameState.filtered_ids("items"):
 		var item := ConfigDB.entry("items", id)
-		pool.append({"kind": "item", "id": id, "name": item.get("name", id), "summary": item.get("summary", ""), "art_id": item.get("art_id", "pickup_qi")})
+		pool.append({"kind": "item", "id": id, "name": item.get("name", id), "summary": item.get("summary", ""), "art_id": _offer_art_id(id), "data": item})
 	for id in GameState.filtered_ids("skills"):
 		var skill := ConfigDB.entry("skills", id)
-		pool.append({"kind": "skill", "id": id, "name": skill.get("name", id), "summary": skill.get("summary", ""), "art_id": skill.get("art_id", "fx_slash")})
+		pool.append({"kind": "skill", "id": id, "name": skill.get("name", id), "summary": skill.get("summary", ""), "art_id": _offer_art_id(id), "data": skill})
 	pool.shuffle()
 	var seen := {}
 	for offer in pool:
@@ -569,13 +645,181 @@ func _roll_offers(count: int) -> Array:
 
 func _offer_button(offer: Dictionary) -> Button:
 	var b := Button.new()
-	b.custom_minimum_size = Vector2(410, 360)
-	b.text = "%s\n\n%s\n\n%s" % [offer["name"], _kind_name(offer["kind"]), offer["summary"]]
-	b.icon = AssetDB.tex(str(offer.get("art_id", "pickup_qi")))
-	b.expand_icon = true
-	b.add_theme_font_size_override("font_size", 24)
+	b.custom_minimum_size = Vector2(320, 426)
+	b.text = ""
+	b.focus_mode = Control.FOCUS_NONE
+	b.add_theme_stylebox_override("normal", _stylebox(Color(0.026, 0.04, 0.045, 0.96), Color(0.38, 0.9, 0.82, 0.38), 1, 6))
+	b.add_theme_stylebox_override("hover", _stylebox(Color(0.045, 0.072, 0.076, 0.98), Color("#e8b259"), 2, 6))
+	b.add_theme_stylebox_override("pressed", _stylebox(Color(0.055, 0.066, 0.055, 0.98), Color("#e8b259"), 2, 6))
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	b.add_child(margin)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_child(box)
+	var art_panel := PanelContainer.new()
+	art_panel.custom_minimum_size = Vector2(0, 154)
+	art_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.012, 0.025, 0.028, 0.98), _element_color(str(offer.get("data", {}).get("element", ""))), 2, 5))
+	box.add_child(art_panel)
+	var art := TextureRect.new()
+	art.texture = AssetDB.tex(str(offer.get("art_id", "pickup_qi")))
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art_panel.add_child(art)
+	var name := Label.new()
+	name.text = str(offer["name"])
+	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name.add_theme_font_size_override("font_size", 25)
+	name.add_theme_color_override("font_color", Color("#fff8e8"))
+	name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(name)
+	var kind := Label.new()
+	kind.text = "%s · %s" % [_kind_name(str(offer["kind"])), _offer_school_name(offer)]
+	kind.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	kind.add_theme_font_size_override("font_size", 17)
+	kind.add_theme_color_override("font_color", Color("#e8b259"))
+	kind.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(kind)
+	var summary := Label.new()
+	summary.text = str(offer.get("summary", ""))
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	summary.custom_minimum_size = Vector2(0, 42)
+	summary.add_theme_font_size_override("font_size", 15)
+	summary.add_theme_color_override("font_color", Color("#cfe5e0"))
+	summary.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(summary)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 5)
+	rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(rows)
+	for row in _offer_effect_rows(offer).slice(0, 4):
+		rows.add_child(_effect_row_control(row))
 	b.pressed.connect(func(): _choose_offer(offer))
 	return b
+
+func _offer_art_id(id: String) -> String:
+	return "offer_%s" % id
+
+func _offer_school_name(offer: Dictionary) -> String:
+	var data: Dictionary = offer.get("data", {})
+	var element = data.get("element", data.get("school", null))
+	if element == null or str(element) == "common":
+		return "通用"
+	return GameState.root_name(str(element))
+
+func _offer_effect_rows(offer: Dictionary) -> Array:
+	var rows: Array = []
+	var data: Dictionary = offer.get("data", {})
+	match str(offer.get("kind", "")):
+		"weapon":
+			var element := str(data.get("element", ""))
+			var klass := str(data.get("class", ""))
+			if klass == "shield":
+				rows.append(_effect_row("max_qi_shield", "护盾生成", "+%.0f" % max(10.0, float(data.get("base_damage", 0.0)) + 10.0), element))
+			else:
+				rows.append(_effect_row("%s_damage_pct" % element, "%s伤害" % GameState.root_name(element), "%.0f" % float(data.get("base_damage", 0.0)), element))
+			rows.append(_effect_row("attack_speed", "冷却", "%.2fs" % float(data.get("cooldown", 0.0)), element))
+			if float(data.get("range", 0.0)) > 0.0:
+				rows.append(_effect_row("range_pct", "射程", "%.0f" % float(data.get("range", 0.0)), element))
+			for effect in data.get("on_hit", []):
+				rows.append(_on_hit_row(effect, element))
+		"item":
+			for key in data.get("effects", {}).keys():
+				rows.append(_stat_effect_row(str(key), data["effects"][key], false))
+			for key in data.get("cost_effects", {}).keys():
+				rows.append(_stat_effect_row(str(key), data["cost_effects"][key], true))
+		"skill":
+			for key in data.get("effects", {}).keys():
+				rows.append(_stat_effect_row(str(key), data["effects"][key], false))
+	return rows
+
+func _effect_row(key: String, label: String, value: String, element := "") -> Dictionary:
+	return {"key": key, "label": label, "value": value, "icon": _effect_icon_id(key, element), "color": _effect_color(key, element)}
+
+func _stat_effect_row(key: String, value, cost := false) -> Dictionary:
+	var text := _effect_value_text(key, value)
+	if cost and not text.begins_with("-") and text != "启用":
+		if text.begins_with("+"):
+			text = text.substr(1)
+		text = "+" + text
+	var row := _effect_row(key, _effect_label(key), text)
+	if cost:
+		row["label"] = "代价 · %s" % row["label"]
+		row["color"] = Color("#f27348")
+	return row
+
+func _on_hit_row(effect: Dictionary, element: String) -> Dictionary:
+	var kind := str(effect.get("effect", ""))
+	match kind:
+		"poison":
+			return _effect_row("poison", "中毒", "%.0f/s %.1fs" % [float(effect.get("dps", 0.0)), float(effect.get("dur", 0.0))], "wood")
+		"bleed":
+			return _effect_row("bleed", "流血", "%.0f/s %.1fs" % [float(effect.get("dps", 0.0)), float(effect.get("dur", 0.0))], "metal")
+		"ignite":
+			return _effect_row("ignite", "灼烧", "%.0f/s %.1fs" % [float(effect.get("dps", 0.0)), float(effect.get("dur", 0.0))], "fire")
+		"slow":
+			return _effect_row("slow", "减速", "-%.0f%% %.1fs" % [float(effect.get("value", 0.0)) * 100.0, float(effect.get("dur", 0.0))], "water")
+		"chill_stack":
+			return _effect_row("chill_stack", "寒意", "叠层", "water")
+		"freeze":
+			return _effect_row("freeze", "冻结", "触发", "water")
+		"grant_shield", "shield_splash":
+			return _effect_row("max_qi_shield", "护盾", "+%.0f" % float(effect.get("value", effect.get("scale_eng", 1.0))), "water")
+		"crit_bonus":
+			return _effect_row("crit_chance", "暴击", "+%.0f%%" % (float(effect.get("value", 0.0)) * 100.0), element)
+		"knockback", "pull":
+			return _effect_row("range_pct", "控场", "%.0f" % float(effect.get("value", 0.0)), element)
+		"split_chance":
+			return _effect_row("sword_split_chance", "分裂", "+%.0f%%" % (float(effect.get("value", 0.0)) * 100.0), "metal")
+		"quake", "explode", "ignite_nova", "poison_burst":
+			return _effect_row(kind, "范围爆发", "触发", element)
+		"armor_up":
+			return _effect_row("armor", "护甲", "+%.0f" % float(effect.get("value", 1.0)), "earth")
+		"vulnerable", "execute_setup", "ignore_armor":
+			return _effect_row("crit_chance", "破绽", "触发", element)
+		_:
+			return _effect_row(kind, _effect_label(kind), "触发", element)
+
+func _effect_row_control(row: Dictionary) -> Control:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(0, 30)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var color: Color = row.get("color", Color("#5fe0c8"))
+	panel.add_theme_stylebox_override("panel", _stylebox(Color(color.r, color.g, color.b, 0.12), Color(color.r, color.g, color.b, 0.32), 1, 4))
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 7)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(line)
+	var icon := TextureRect.new()
+	icon.custom_minimum_size = Vector2(24, 24)
+	icon.texture = AssetDB.tex(str(row.get("icon", "pickup_qi")))
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.add_child(icon)
+	var label := Label.new()
+	label.text = str(row.get("label", ""))
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_color_override("font_color", Color("#eaf6ff"))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.add_child(label)
+	var value := Label.new()
+	value.text = str(row.get("value", ""))
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	value.add_theme_font_size_override("font_size", 15)
+	value.add_theme_color_override("font_color", color)
+	value.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.add_child(value)
+	return panel
 
 func _kind_name(kind: String) -> String:
 	match kind:
@@ -587,6 +831,173 @@ func _kind_name(kind: String) -> String:
 			return "心法"
 		_:
 			return kind
+
+func _effect_label(key: String) -> String:
+	match key:
+		"sword_power":
+			return "剑意"
+		"spell_power":
+			return "法力"
+		"engineering":
+			return "御器"
+		"damage_pct":
+			return "全伤"
+		"element_pct":
+			return "元素"
+		"metal_damage_pct":
+			return "金伤"
+		"wood_damage_pct":
+			return "木伤"
+		"water_damage_pct":
+			return "水伤"
+		"fire_damage_pct":
+			return "火伤"
+		"earth_damage_pct":
+			return "土伤"
+		"crit_chance":
+			return "暴击"
+		"crit_mult":
+			return "暴伤"
+		"dodge":
+			return "身法"
+		"armor":
+			return "护甲"
+		"speed_pct":
+			return "移速"
+		"attack_speed":
+			return "攻速"
+		"range_pct":
+			return "范围"
+		"lifesteal":
+			return "噬灵"
+		"luck":
+			return "气运"
+		"harvesting":
+			return "摄物"
+		"max_hp":
+			return "气血"
+		"hp_regen":
+			return "回气"
+		"max_qi_shield":
+			return "护盾"
+		"qi_shield_delay":
+			return "回盾延迟"
+		"sword_split_chance":
+			return "分裂"
+		"poison_contagion":
+			return "毒扩散"
+		"fire_execute":
+			return "斩杀"
+		"execute_threshold":
+			return "斩杀线"
+		"execute_mult":
+			return "斩杀倍率"
+		"melee_quake_wave":
+			return "震荡"
+		"quake_radius":
+			return "震荡范围"
+		"root_conversion_bonus":
+			return "互济"
+		_:
+			return key
+
+func _effect_value_text(key: String, value) -> String:
+	if typeof(value) == TYPE_BOOL:
+		return "启用" if bool(value) else "关闭"
+	if typeof(value) != TYPE_INT and typeof(value) != TYPE_FLOAT:
+		return str(value)
+	var amount := float(value)
+	if _is_percent_key(key):
+		return _signed_number(amount * 100.0, 0) + "%"
+	if key == "qi_shield_delay":
+		return _signed_number(amount, 1) + "s"
+	if abs(amount) < 1.0 and not is_zero_approx(amount):
+		return _signed_number(amount * 100.0, 0) + "%"
+	if is_equal_approx(amount, round(amount)):
+		return _signed_number(amount, 0)
+	return _signed_number(amount, 1)
+
+func _is_percent_key(key: String) -> bool:
+	return key.ends_with("_pct") or key in ["crit_chance", "crit_mult", "dodge", "attack_speed", "lifesteal", "sword_split_chance", "execute_threshold", "execute_mult", "root_conversion_bonus"]
+
+func _signed_number(amount: float, decimals: int) -> String:
+	var absolute: float = abs(amount)
+	var body := ""
+	match decimals:
+		0:
+			body = str(int(round(absolute)))
+		1:
+			body = "%.1f" % absolute
+		_:
+			body = "%.2f" % absolute
+	if amount > 0.0:
+		return "+" + body
+	if amount < 0.0:
+		return "-" + body
+	return body
+
+func _effect_icon_id(key: String, element := "") -> String:
+	if key.find("shield") >= 0 or key == "max_qi_shield":
+		return "icon_shield"
+	if key.find("crit") >= 0 or key.find("execute") >= 0:
+		return "icon_crit"
+	if key.find("speed") >= 0:
+		return "offer_stat_attack_speed"
+	if key.find("range") >= 0 or key == "harvesting":
+		return "offer_stat_range"
+	if key.find("hp") >= 0 or key == "lifesteal":
+		return "offer_blood_return"
+	if key == "armor":
+		return "offer_thick_earth_armor"
+	if key == "luck":
+		return "offer_lucky_coin"
+	if key.find("poison") >= 0:
+		return "icon_wood"
+	if key.find("ignite") >= 0 or key.find("fire") >= 0:
+		return "icon_fire"
+	if key.find("water") >= 0 or key.find("slow") >= 0 or key.find("chill") >= 0 or key.find("freeze") >= 0:
+		return "icon_water"
+	if key.find("earth") >= 0 or key.find("quake") >= 0:
+		return "icon_earth"
+	if key.find("wood") >= 0:
+		return "icon_wood"
+	if key.find("metal") >= 0 or key.find("sword") >= 0 or key.find("bleed") >= 0:
+		return "icon_metal"
+	match element:
+		"metal", "wood", "water", "fire", "earth":
+			return "icon_%s" % element
+		_:
+			return "pickup_qi"
+
+func _effect_color(key: String, element := "") -> Color:
+	if key.find("shield") >= 0 or key == "max_qi_shield":
+		return Color("#5aa9e0")
+	if key.find("crit") >= 0 or key.find("fire") >= 0 or key.find("ignite") >= 0:
+		return Color("#f27348")
+	if key.find("poison") >= 0 or key.find("wood") >= 0:
+		return Color("#7ccb5a")
+	if key.find("water") >= 0 or key.find("slow") >= 0 or key.find("freeze") >= 0:
+		return Color("#5aa9e0")
+	if key.find("earth") >= 0 or key == "armor" or key.find("quake") >= 0:
+		return Color("#d9a441")
+	if key.find("metal") >= 0 or key.find("sword") >= 0 or key.find("bleed") >= 0:
+		return Color("#eaf6ff")
+	return _element_color(element)
+
+func _element_color(element: String) -> Color:
+	match element:
+		"metal":
+			return Color("#eaf6ff")
+		"wood":
+			return Color("#7ccb5a")
+		"water":
+			return Color("#5aa9e0")
+		"fire":
+			return Color("#f27348")
+		"earth":
+			return Color("#d9a441")
+		_:
+			return Color("#5fe0c8")
 
 func _choose_offer(offer: Dictionary) -> void:
 	match offer["kind"]:
@@ -623,6 +1034,9 @@ func _update_hud() -> void:
 	shield_bar.value = player.shield
 	xp_bar.max_value = GameState.xp_to_next
 	xp_bar.value = GameState.xp
+	hp_value_label.text = "气血 %.0f / %.0f" % [player.hp, float(GameState.stats.get("max_hp", 110))]
+	shield_value_label.text = "护盾 %.0f / %.0f" % [player.shield, float(GameState.stats.get("max_qi_shield", 60))]
+	xp_value_label.text = "Lv.%d  灵气 %.0f / %.0f" % [GameState.level, GameState.xp, GameState.xp_to_next]
 	var roots := []
 	for e in GameState.active_roots:
 		roots.append(GameState.root_name(e))
@@ -636,33 +1050,46 @@ func _update_hud() -> void:
 		burst_cd,
 		"".join(roots)
 	]
-	var w_lines := []
-	for i in range(GameState.active_weapons.size()):
-		var w: Dictionary = GameState.active_weapons[i]
-		w_lines.append("%d.%s %s T%d" % [i + 1, GameState.root_name(w.get("element", "")), w.get("name", ""), int(w.get("tier", 1))])
-	weapon_label.text = "四法器槽 · 多系倍率 %.0f%%\n%s" % [GameState.multi_element_multiplier() * 100.0, "\n".join(w_lines)]
-	stats_label.text = "气血 %.0f/%.0f  护盾 %.0f/%.0f  全伤 %.0f%%  金/木/水/火/土 %.0f/%.0f/%.0f/%.0f/%.0f%%  暴击 %.0f%%  闪避 %.0f%%  护甲 %.0f  移速 %.0f%%  攻速 %.0f%%  范围 %.0f%%  吸血 %.0f%%  气运 %.0f  背包 %d/%d" % [
-		player.hp,
-		float(GameState.stats.get("max_hp", 110)),
-		player.shield,
-		float(GameState.stats.get("max_qi_shield", 60)),
-		float(GameState.stats.get("damage_pct", 0.0)) * 100.0,
-		float(GameState.stats.get("metal_damage_pct", 0.0)) * 100.0,
-		float(GameState.stats.get("wood_damage_pct", 0.0)) * 100.0,
-		float(GameState.stats.get("water_damage_pct", 0.0)) * 100.0,
-		float(GameState.stats.get("fire_damage_pct", 0.0)) * 100.0,
-		float(GameState.stats.get("earth_damage_pct", 0.0)) * 100.0,
-		float(GameState.stats.get("crit_chance", 0.0)) * 100.0,
-		float(GameState.stats.get("dodge", 0.0)) * 100.0,
-		float(GameState.stats.get("armor", 0.0)),
-		(1.0 + float(GameState.stats.get("speed_pct", 0.0))) * 100.0,
-		float(GameState.stats.get("attack_speed", 0.0)) * 100.0,
-		float(GameState.stats.get("range_pct", 0.0)) * 100.0,
-		float(GameState.stats.get("lifesteal", 0.0)) * 100.0,
-		float(GameState.stats.get("luck", 0.0)),
-		GameState.bag.size(),
-		int(GameState.stats.get("bag_capacity", 5))
+	for i in range(weapon_slot_buttons.size()):
+		var slot: Button = weapon_slot_buttons[i]
+		if i < GameState.active_weapons.size():
+			var w: Dictionary = GameState.active_weapons[i]
+			slot.icon = AssetDB.tex(_offer_art_id(str(w.get("id", ""))))
+			slot.tooltip_text = _weapon_tooltip(i, w)
+		else:
+			slot.icon = AssetDB.tex("pickup_qi")
+			slot.tooltip_text = "空法器槽"
+	for entry in stat_icon_buttons:
+		var button: Button = entry["button"]
+		var def: Dictionary = entry["def"]
+		button.icon = AssetDB.tex(str(def["icon"]))
+		button.tooltip_text = _stat_tooltip(def)
+
+func _weapon_tooltip(index: int, weapon: Dictionary) -> String:
+	var element := str(weapon.get("element", ""))
+	var lines := [
+		"%d. %s T%d" % [index + 1, str(weapon.get("name", "")), int(weapon.get("tier", 1))],
+		"%s · %s" % [GameState.root_name(element), str(weapon.get("class", ""))],
+		"伤害 %.0f  冷却 %.2fs  射程 %.0f" % [float(weapon.get("base_damage", 0.0)), float(weapon.get("cooldown", 0.0)), float(weapon.get("range", 0.0))]
 	]
+	for effect in weapon.get("on_hit", []):
+		var row := _on_hit_row(effect, element)
+		lines.append("%s %s" % [row.get("label", ""), row.get("value", "")])
+	return "\n".join(lines)
+
+func _stat_tooltip(def: Dictionary) -> String:
+	var key := str(def["key"])
+	var label := str(def["label"])
+	var current = GameState.stats.get(key, 0.0)
+	var value := _effect_value_text(key, current)
+	if key == "speed_pct":
+		value = "%.0f%%" % ((1.0 + float(current)) * 100.0)
+	var extra := ""
+	if key == "damage_pct":
+		extra = "\n多系倍率 %.0f%%" % (GameState.multi_element_multiplier() * 100.0)
+	elif key == "lifesteal":
+		extra = "\n背包 %d/%d" % [GameState.bag.size(), int(GameState.stats.get("bag_capacity", 5))]
+	return "%s：%s%s" % [label, value, extra]
 
 func _finish_run(title: String, _reason: String) -> void:
 	var roots := []
