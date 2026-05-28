@@ -35,6 +35,17 @@ func _run() -> void:
 		_check_max_size(weapon_panel, Vector2(386, 112), "weapon panel", failures)
 		_check_slack(weapon_panel, Vector2(32, 34), "weapon panel", failures)
 
+	arena._open_market("测试机缘")
+	await process_frame
+	var market_stat_panel: Control = _find_node(arena, "MarketStatPanel")
+	if market_stat_panel == null:
+		failures.append("MarketStatPanel was not found")
+	else:
+		_check_max_size(market_stat_panel, Vector2(220, 506), "market stat panel", failures)
+		_check_slack(market_stat_panel, Vector2(96, 28), "market stat panel", failures)
+		if market_stat_panel.find_children("*", "PanelContainer", true, false).size() < 14:
+			failures.append("market stat panel should show the full icon-row stat list")
+
 	if failures.is_empty():
 		print("HUD LAYOUT OK: stat and weapon panels remain compact.")
 		quit(0)

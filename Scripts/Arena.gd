@@ -1438,9 +1438,14 @@ func _render_market() -> void:
 	box.add_child(market_notice_label)
 	var cards := HBoxContainer.new()
 	cards.add_theme_constant_override("separation", 14)
-	box.add_child(cards)
+	cards.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var offer_area := HBoxContainer.new()
+	offer_area.add_theme_constant_override("separation", 14)
+	box.add_child(offer_area)
+	offer_area.add_child(cards)
 	for offer in market_offers:
 		cards.add_child(_offer_button(offer))
+	offer_area.add_child(_market_stat_panel())
 	box.add_child(_market_inventory_panel())
 	SignalsBus.market_offered.emit(market_offers)
 
@@ -2030,7 +2035,6 @@ func _market_inventory_panel() -> Control:
 	margin.add_child(columns)
 	columns.add_child(_market_weapon_column())
 	columns.add_child(_market_item_column())
-	columns.add_child(_market_stat_column())
 	return panel
 
 func _market_column(title_text: String, width: float) -> VBoxContainer:
@@ -2108,21 +2112,28 @@ func _market_item_column() -> VBoxContainer:
 		row.add_child(slot)
 	return box
 
-func _market_stat_column() -> VBoxContainer:
-	var box := _market_column("角色数值", 320)
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 14)
-	grid.add_theme_constant_override("v_separation", 3)
-	box.add_child(grid)
-	for def in HUD_STAT_DEFS.slice(0, 8):
-		var label := Label.new()
-		label.text = "%s %s" % [str(def.get("label", "")), _hud_stat_value(def)]
-		label.add_theme_font_size_override("font_size", 14)
-		label.add_theme_color_override("font_color", Color("#cfe5e0"))
-		label.tooltip_text = _stat_tooltip(def)
-		grid.add_child(label)
-	return box
+func _market_stat_panel() -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.name = "MarketStatPanel"
+	panel.custom_minimum_size = Vector2(196, OFFER_CARD_SIZE.y)
+	panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.018, 0.032, 0.038, 0.84), Color("#5fe0c8"), 1, 6, 5, 4))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 3)
+	panel.add_child(box)
+	var title := Label.new()
+	title.text = "角色数值"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 15)
+	title.add_theme_color_override("font_color", Color("#e8b259"))
+	box.add_child(title)
+	for def in HUD_STAT_DEFS:
+		var stat_entry := _stat_row_control(def)
+		_refresh_stat_entry(stat_entry)
+		var stat_def: Dictionary = def.duplicate(true)
+		var row_panel: PanelContainer = stat_entry["panel"]
+		row_panel.gui_input.connect(func(event): _on_stat_gui_input(event, stat_def))
+		box.add_child(row_panel)
+	return panel
 
 func _clear_detail() -> void:
 	if is_instance_valid(detail_layer):
@@ -2387,13 +2398,16 @@ func _update_hud() -> void:
 			slot.tooltip_text = "空道具格"
 			_set_item_button_style(slot, {}, true)
 	for entry in stat_rows:
-		var panel: PanelContainer = entry["panel"]
-		var icon: TextureRect = entry["icon"]
-		var value: Label = entry["value"]
-		var def: Dictionary = entry["def"]
-		icon.texture = AssetDB.tex(str(def["icon"]))
-		value.text = _hud_stat_value(def)
-		panel.tooltip_text = _stat_tooltip(def)
+		_refresh_stat_entry(entry)
+
+func _refresh_stat_entry(entry: Dictionary) -> void:
+	var panel: PanelContainer = entry["panel"]
+	var icon: TextureRect = entry["icon"]
+	var value: Label = entry["value"]
+	var def: Dictionary = entry["def"]
+	icon.texture = AssetDB.tex(str(def["icon"]))
+	value.text = _hud_stat_value(def)
+	panel.tooltip_text = _stat_tooltip(def)
 
 func _weapon_tooltip(index: int, weapon: Dictionary, reserve := false) -> String:
 	var element := str(weapon.get("element", ""))
