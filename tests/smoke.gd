@@ -94,6 +94,7 @@ func _init() -> void:
 			failures.append("char_yunxi_walk_24 frame 6 is too similar to frame 0")
 		if _frame_diff(frame_0, frame_12) < 1200.0:
 			failures.append("char_yunxi_walk_24 frame 12 must be a distinct opposite walk pose")
+	_verify_player_horizontal_facing_source(failures)
 	if failures.is_empty():
 		print("SMOKE OK: data, CJK font, generated assets, and main scene are present.")
 		quit(0)
@@ -116,3 +117,13 @@ func _frame_diff(a: Image, b: Image) -> float:
 			var cb := b.get_pixel(x, y)
 			total += absf(ca.r - cb.r) + absf(ca.g - cb.g) + absf(ca.b - cb.b) + absf(ca.a - cb.a)
 	return total
+
+func _verify_player_horizontal_facing_source(failures: Array) -> void:
+	var player_script := FileAccess.get_file_as_string("res://Scripts/Player/Player.gd")
+	if player_script.is_empty():
+		failures.append("Player.gd could not be inspected for facing verification")
+		return
+	if not player_script.contains("sprite.flip_h = facing.x > 0.1"):
+		failures.append("player sprite must flip horizontally when facing right")
+	if player_script.contains("sprite.flip_h = facing.x < -0.1"):
+		failures.append("player sprite facing is still inverted for rightward movement")
