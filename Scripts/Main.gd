@@ -522,7 +522,7 @@ func _root_card(element: String) -> Button:
 	var info: Dictionary = ROOT_INFO[element]
 	var accent := Color(str(info["color"]))
 	var button := Button.new()
-	button.custom_minimum_size = Vector2(304, 342)
+	button.custom_minimum_size = Vector2(304, 318)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.toggle_mode = true
 	button.text = ""
@@ -561,17 +561,19 @@ func _root_card(element: String) -> Button:
 	header_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header.add_child(header_text)
 
+	var title := Label.new()
+	title.text = str(info["name"])
+	title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_apply_display_font(title, 27, accent.lightened(0.18), 2)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	header_text.add_child(title)
+
 	var seal := Label.new()
 	seal.text = str(info["seal"])
-	_apply_body_font(seal, 18, Color("#cfe5e0"))
+	seal.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_apply_body_font(seal, 15, Color("#cfe5e0"))
 	seal.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	header_text.add_child(seal)
-
-	var seal_hint := Label.new()
-	seal_hint.text = "封印后不进入本局掉落池"
-	_apply_body_font(seal_hint, 14, Color(0.8, 0.93, 0.9, 0.72))
-	seal_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	header_text.add_child(seal_hint)
 
 	var icon_panel := PanelContainer.new()
 	icon_panel.custom_minimum_size = Vector2(0, 104)
@@ -587,13 +589,6 @@ func _root_card(element: String) -> Button:
 	icon.modulate = Color(1.08, 1.08, 1.08, 1.0)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	icon_panel.add_child(icon)
-
-	var title := Label.new()
-	title.text = str(info["name"])
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_apply_display_font(title, 31, accent.lightened(0.18), 2)
-	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(title)
 
 	var tag := Label.new()
 	tag.text = str(info["tag"])
