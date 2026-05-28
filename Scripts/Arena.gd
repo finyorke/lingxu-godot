@@ -48,6 +48,7 @@ var shake_power := 0.0
 var camera: Camera2D
 var hud_layer: CanvasLayer
 var overlay_layer: CanvasLayer
+var detail_layer: CanvasLayer
 var hp_bar: ProgressBar
 var shield_bar: ProgressBar
 var xp_bar: ProgressBar
@@ -64,6 +65,14 @@ var weapon_reserve_buttons: Array = []
 var item_slot_buttons: Array = []
 var stat_rows: Array = []
 var message_label: Label
+var market_notice_label: Label
+var market_mode := "choice"
+var market_reason := ""
+var market_offers: Array = []
+var market_notice_text := ""
+var next_spirit_shop_time := 60.0
+var weapon_drag_source := {}
+var suppress_next_weapon_detail := false
 
 func _ready() -> void:
 	FontUtil.ensure_fallback(DISPLAY_FONT, BODY_FONT)
@@ -163,6 +172,9 @@ func _setup_hud() -> void:
 	stat_rows.clear()
 	for def in HUD_STAT_DEFS:
 		var stat_entry := _stat_row_control(def)
+		var stat_def: Dictionary = def.duplicate(true)
+		var panel: PanelContainer = stat_entry["panel"]
+		panel.gui_input.connect(func(event): _on_stat_gui_input(event, stat_def))
 		stat_box.add_child(stat_entry["panel"])
 		stat_rows.append(stat_entry)
 	var weapon_panel := PanelContainer.new()
@@ -191,6 +203,9 @@ func _setup_hud() -> void:
 	weapon_slot_buttons.clear()
 	for i in range(4):
 		var slot := _hud_icon_button(Vector2(48, 48))
+		var slot_index := i
+		slot.pressed.connect(func(): _show_weapon_detail("active", slot_index))
+		slot.gui_input.connect(func(event): _on_weapon_slot_gui_input(event, "active", slot_index))
 		weapon_slots.add_child(slot)
 		weapon_slot_buttons.append(slot)
 	var reserve_label := Label.new()
@@ -204,6 +219,9 @@ func _setup_hud() -> void:
 	weapon_reserve_buttons.clear()
 	for i in range(GameState.weapon_reserve_capacity()):
 		var slot := _hud_icon_button(Vector2(48, 48))
+		var slot_index := i
+		slot.pressed.connect(func(): _show_weapon_detail("reserve", slot_index))
+		slot.gui_input.connect(func(event): _on_weapon_slot_gui_input(event, "reserve", slot_index))
 		reserve_slots.add_child(slot)
 		weapon_reserve_buttons.append(slot)
 	item_panel = PanelContainer.new()
@@ -234,6 +252,8 @@ func _setup_hud() -> void:
 	var max_bag_slots: int = int(max(int(GameState.stats.get("bag_capacity", 5)), int(GameState.stats.get("bag_capacity_max", 10))))
 	for i in range(max_bag_slots):
 		var slot := _hud_icon_button(Vector2(42, 42))
+		var slot_index := i
+		slot.pressed.connect(func(): _show_item_detail(slot_index))
 		item_slots.add_child(slot)
 		item_slot_buttons.append(slot)
 	message_label = Label.new()
@@ -246,6 +266,9 @@ func _setup_hud() -> void:
 	root.add_child(message_label)
 	overlay_layer = CanvasLayer.new()
 	add_child(overlay_layer)
+	detail_layer = CanvasLayer.new()
+	detail_layer.layer = 20
+	add_child(detail_layer)
 
 func _bar(color: Color) -> ProgressBar:
 	var b := ProgressBar.new()
@@ -280,7 +303,7 @@ func _hud_icon_button(size: Vector2) -> Button:
 	b.text = ""
 	b.expand_icon = true
 	b.focus_mode = Control.FOCUS_NONE
-	b.mouse_default_cursor_shape = Control.CURSOR_HELP
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	b.add_theme_stylebox_override("normal", _stylebox(Color(0.03, 0.055, 0.06, 0.9), Color(0.35, 0.88, 0.82, 0.34), 1, 5))
 	b.add_theme_stylebox_override("hover", _stylebox(Color(0.05, 0.09, 0.1, 0.96), Color("#e8b259"), 2, 5))
 	b.add_theme_stylebox_override("pressed", _stylebox(Color(0.08, 0.1, 0.09, 0.98), Color("#e8b259"), 2, 5))
@@ -289,6 +312,7 @@ func _hud_icon_button(size: Vector2) -> Button:
 func _stat_row_control(def: Dictionary) -> Dictionary:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(0, 34)
+	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.03, 0.055, 0.06, 0.74), Color(0.35, 0.88, 0.82, 0.28), 1, 5, 5, 3))
 	var line := HBoxContainer.new()
 	line.add_theme_constant_override("separation", 5)
@@ -395,6 +419,10 @@ func _physics_process(delta: float) -> void:
 		hitstop -= delta
 		return
 	GameState.run_time += delta
+	if GameState.run_time >= next_spirit_shop_time:
+		next_spirit_shop_time += 60.0
+		_open_spirit_shop()
+		return
 	burst_cd = max(0.0, burst_cd - delta)
 	player.tick(delta, arena_radius)
 	camera.global_position = player.global_position + _shake_offset()
@@ -426,6 +454,11 @@ func _update_weapons(delta: float) -> void:
 			interval /= 1.0 + max(-0.75, float(GameState.stats.get("attack_speed", 0.0)))
 			interval *= 1.0 - clamp(float(GameState.stats.get("attack_interval_pct", 0.0)), -0.5, 0.5)
 			weapon_cds[i] = max(0.12, interval)
+
+func _reset_weapon_cooldowns() -> void:
+	weapon_cds.resize(GameState.active_weapons.size())
+	for i in range(weapon_cds.size()):
+		weapon_cds[i] = rng.randf_range(0.05, 0.35)
 
 func _fire_weapon(weapon: Dictionary, slot_index := -1) -> void:
 	var klass := str(weapon.get("class", "flying_sword"))
@@ -1255,6 +1288,23 @@ func _open_market(reason: String) -> void:
 	if market_open:
 		return
 	market_open = true
+	market_mode = "choice"
+	market_reason = reason
+	market_notice_text = ""
+	market_offers = _roll_offers(4, false)
+	_render_market()
+
+func _open_spirit_shop() -> void:
+	if market_open:
+		return
+	market_open = true
+	market_mode = "spirit_shop"
+	market_reason = "云游商会"
+	market_notice_text = "可用拾取的灵石购买法器、道具和数值提升。"
+	market_offers = _roll_offers(4, true)
+	_render_market()
+
+func _render_market() -> void:
 	overlay_layer.queue_free()
 	overlay_layer = CanvasLayer.new()
 	add_child(overlay_layer)
@@ -1276,21 +1326,74 @@ func _open_market(reason: String) -> void:
 	margin.add_theme_constant_override("margin_bottom", 20)
 	frame.add_child(margin)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 16)
+	box.add_theme_constant_override("separation", 12)
 	margin.add_child(box)
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 12)
+	box.add_child(header)
 	var title := Label.new()
-	title.text = "%s · 四选一" % reason
-	_apply_display_font(title, 54, Color("#e8b259"), 3)
-	box.add_child(title)
+	title.text = "%s · 灵石购物" % market_reason if market_mode == "spirit_shop" else "%s · 四选一" % market_reason
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_apply_display_font(title, 46, Color("#e8b259"), 3)
+	header.add_child(title)
+	var stone_label := Label.new()
+	stone_label.text = "灵石 %d" % GameState.stones
+	stone_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	stone_label.add_theme_font_size_override("font_size", 22)
+	stone_label.add_theme_color_override("font_color", Color("#fff4b8"))
+	header.add_child(stone_label)
+	if market_mode == "spirit_shop":
+		var refresh := Button.new()
+		refresh.text = "刷新 %d" % _reroll_cost()
+		refresh.custom_minimum_size = Vector2(112, 44)
+		refresh.focus_mode = Control.FOCUS_NONE
+		refresh.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		refresh.pressed.connect(_refresh_spirit_shop)
+		header.add_child(refresh)
+		var close := Button.new()
+		close.text = "离开"
+		close.custom_minimum_size = Vector2(86, 44)
+		close.focus_mode = Control.FOCUS_NONE
+		close.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		close.pressed.connect(_close_market)
+		header.add_child(close)
+	market_notice_label = Label.new()
+	market_notice_label.text = market_notice_text
+	market_notice_label.custom_minimum_size = Vector2(0, 24)
+	market_notice_label.add_theme_font_size_override("font_size", 17)
+	market_notice_label.add_theme_color_override("font_color", Color("#cfe5e0"))
+	box.add_child(market_notice_label)
 	var cards := HBoxContainer.new()
 	cards.add_theme_constant_override("separation", 14)
 	box.add_child(cards)
-	var offers := _roll_offers(4)
-	for offer in offers:
+	for offer in market_offers:
 		cards.add_child(_offer_button(offer))
-	SignalsBus.market_offered.emit(offers)
+	box.add_child(_market_inventory_panel())
+	SignalsBus.market_offered.emit(market_offers)
 
-func _roll_offers(count: int) -> Array:
+func _close_market() -> void:
+	market_open = false
+	market_notice_text = ""
+	_clear_detail()
+	overlay_layer.queue_free()
+	overlay_layer = CanvasLayer.new()
+	add_child(overlay_layer)
+	_update_hud()
+
+func _refresh_spirit_shop() -> void:
+	var cost := _reroll_cost()
+	if GameState.stones < cost:
+		_show_notice("灵石不足，无法刷新")
+		return
+	GameState.stones -= cost
+	market_notice_text = "已刷新商品。"
+	market_offers = _roll_offers(4, true)
+	_render_market()
+
+func _reroll_cost() -> int:
+	return int(ConfigDB.table("market").get("reroll_cost", 8))
+
+func _roll_offers(count: int, paid_shop := false) -> Array:
 	var result: Array = []
 	var pool: Array = []
 	for id in GameState.filtered_ids("weapons"):
@@ -1299,18 +1402,25 @@ func _roll_offers(count: int) -> Array:
 			continue
 		var data := w.duplicate(true)
 		var tier := GameState.WEAPON_TIER_MAX if bool(data.get("legendary", false)) else _roll_weapon_tier()
-		if not GameState.can_accept_weapon(id, tier):
-			continue
 		data["id"] = id
 		data["tier"] = tier
 		var tier_mult := GameState.weapon_tier_multiplier(tier)
-		pool.append({"kind": "weapon", "id": id, "tier": tier, "name": data.get("name", id), "summary": "%s法器 · %s伤害 %.0f" % [GameState.root_name(data.get("element", "")), data.get("class", ""), float(data.get("base_damage", 0)) * tier_mult], "art_id": _offer_art_id(id), "data": data})
+		var weapon_offer := {"kind": "weapon", "id": id, "tier": tier, "name": data.get("name", id), "summary": "%s法器 · %s伤害 %.0f" % [GameState.root_name(data.get("element", "")), data.get("class", ""), float(data.get("base_damage", 0)) * tier_mult], "art_id": _offer_art_id(id), "data": data}
+		if paid_shop:
+			weapon_offer["price"] = _offer_price(weapon_offer)
+		pool.append(weapon_offer)
 	for id in GameState.filtered_ids("items"):
 		var item := ConfigDB.entry("items", id)
-		pool.append({"kind": "item", "id": id, "name": item.get("name", id), "summary": item.get("summary", ""), "art_id": _offer_art_id(id), "data": item})
+		var item_offer := {"kind": "item", "id": id, "name": item.get("name", id), "summary": item.get("summary", ""), "art_id": _offer_art_id(id), "data": item}
+		if paid_shop:
+			item_offer["price"] = _offer_price(item_offer)
+		pool.append(item_offer)
 	for id in GameState.filtered_ids("skills"):
 		var skill := ConfigDB.entry("skills", id)
-		pool.append({"kind": "skill", "id": id, "name": skill.get("name", id), "summary": skill.get("summary", ""), "art_id": _offer_art_id(id), "data": skill})
+		var skill_offer := {"kind": "skill", "id": id, "name": skill.get("name", id), "summary": skill.get("summary", ""), "art_id": _offer_art_id(id), "data": skill}
+		if paid_shop:
+			skill_offer["price"] = _offer_price(skill_offer)
+		pool.append(skill_offer)
 	pool.shuffle()
 	var seen := {}
 	for offer in pool:
@@ -1355,6 +1465,7 @@ func _offer_button(offer: Dictionary) -> Button:
 	var merge_target := {}
 	if kind_id == "weapon":
 		merge_target = GameState.weapon_merge_target(str(offer.get("id", "")), tier)
+	var block_reason := _offer_block_reason(offer)
 	var normal_bg := Color(0.026, 0.04, 0.045, 0.96)
 	var normal_border := Color(0.38, 0.9, 0.82, 0.38)
 	if kind_id == "weapon":
@@ -1368,10 +1479,9 @@ func _offer_button(offer: Dictionary) -> Button:
 	b.add_theme_stylebox_override("hover", _stylebox(Color(0.045, 0.072, 0.076, 0.98).lerp(tier_color, 0.15 if kind_id == "weapon" else 0.0), Color("#e8b259"), 2, 6))
 	b.add_theme_stylebox_override("pressed", _stylebox(Color(0.055, 0.066, 0.055, 0.98), Color("#e8b259"), 2, 6))
 	b.add_theme_stylebox_override("disabled", _stylebox(Color(0.02, 0.024, 0.026, 0.82), Color(0.36, 0.38, 0.38, 0.42), 1, 6))
-	if kind_id == "weapon" and not GameState.can_accept_weapon(str(offer.get("id", "")), tier):
-		b.disabled = true
-		b.modulate = Color(0.66, 0.7, 0.68, 1.0)
-		b.tooltip_text = "法器槽与备炼栏已满，且没有同名同品可合成"
+	if not block_reason.is_empty():
+		b.modulate = Color(0.76, 0.78, 0.75, 1.0)
+		b.tooltip_text = block_reason
 	elif kind_id == "weapon" and not merge_target.is_empty():
 		b.tooltip_text = "选择后合成已有同名同品法器，不占用空槽"
 	var margin := MarginContainer.new()
@@ -1411,6 +1521,8 @@ func _offer_button(offer: Dictionary) -> Button:
 			kind.text = "%s · 升至%s · %s" % [_kind_name(kind_id), GameState.weapon_tier_name(tier + 1), _offer_school_name(offer)]
 	else:
 		kind.text = "%s · %s" % [_kind_name(kind_id), _offer_school_name(offer)]
+	if market_mode == "spirit_shop":
+		kind.text = "%s · %d灵石" % [kind.text, int(offer.get("price", _offer_price(offer)))]
 	kind.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	kind.add_theme_font_size_override("font_size", 17)
 	kind.add_theme_color_override("font_color", Color("#e8b259"))
@@ -1432,6 +1544,34 @@ func _offer_button(offer: Dictionary) -> Button:
 		rows.add_child(_effect_row_control(row))
 	b.pressed.connect(func(): _choose_offer(offer))
 	return b
+
+func _offer_price(offer: Dictionary) -> int:
+	match str(offer.get("kind", "")):
+		"weapon":
+			var tier := int(offer.get("tier", offer.get("data", {}).get("tier", 1)))
+			return 10 + tier * 8
+		"item":
+			var data: Dictionary = offer.get("data", {})
+			return 6 + int(data.get("slots", 1)) * 4
+		"skill":
+			return 12
+	return 8
+
+func _offer_block_reason(offer: Dictionary) -> String:
+	if market_mode == "spirit_shop" and GameState.stones < int(offer.get("price", _offer_price(offer))):
+		return "灵石不足，不能购买"
+	match str(offer.get("kind", "")):
+		"weapon":
+			if not GameState.can_accept_weapon(str(offer.get("id", "")), int(offer.get("tier", 1))):
+				return "法器槽与备炼栏已满，且没有同名同品可合成。可先合并、出售或拖拽调整。"
+		"item":
+			if not GameState.can_accept_item(str(offer.get("id", ""))):
+				return "道具栏已满，出售道具后才可获得。"
+		"skill":
+			var data: Dictionary = offer.get("data", {})
+			if int(GameState.skill_stacks.get(str(offer.get("id", "")), 0)) >= int(data.get("max_stacks", 1)):
+				return "该数值提升已达上限。"
+	return ""
 
 func _offer_art_id(id: String) -> String:
 	return "offer_%s" % id
@@ -1566,7 +1706,7 @@ func _kind_name(kind: String) -> String:
 		"item":
 			return "法宝"
 		"skill":
-			return "心法"
+			return "数值"
 		_:
 			return kind
 
@@ -1738,20 +1878,25 @@ func _element_color(element: String) -> Color:
 			return Color("#5fe0c8")
 
 func _choose_offer(offer: Dictionary) -> void:
+	var block_reason := _offer_block_reason(offer)
+	if not block_reason.is_empty():
+		_show_notice(block_reason)
+		return
+	if market_mode == "spirit_shop":
+		_buy_shop_offer(offer)
+		return
 	var accepted := true
 	match offer["kind"]:
 		"weapon":
 			accepted = GameState.equip_weapon(str(offer["id"]), int(offer.get("tier", 1)))
+			if accepted:
+				_reset_weapon_cooldowns()
 		"item":
-			if not GameState.add_item(str(offer["id"])):
-				GameState.stones += 6
+			accepted = GameState.add_item(str(offer["id"]))
 		"skill":
-			GameState.apply_skill(str(offer["id"]))
+			accepted = GameState.apply_skill(str(offer["id"]))
 	if not accepted:
-		message_label.text = "法器槽与备炼栏已满"
-		var tween := create_tween()
-		tween.tween_interval(1.0)
-		tween.tween_callback(func(): message_label.text = "")
+		_show_notice("槽位已满或数值已达上限")
 		return
 	SignalsBus.market_choice.emit(offer["id"])
 	market_open = false
@@ -1759,6 +1904,339 @@ func _choose_offer(offer: Dictionary) -> void:
 	overlay_layer = CanvasLayer.new()
 	add_child(overlay_layer)
 	_update_hud()
+
+func _buy_shop_offer(offer: Dictionary) -> void:
+	var price := int(offer.get("price", _offer_price(offer)))
+	if GameState.stones < price:
+		_show_notice("灵石不足，不能购买")
+		return
+	var accepted := true
+	match offer["kind"]:
+		"weapon":
+			accepted = GameState.equip_weapon(str(offer["id"]), int(offer.get("tier", 1)))
+			if accepted:
+				_reset_weapon_cooldowns()
+		"item":
+			accepted = GameState.add_item(str(offer["id"]))
+		"skill":
+			accepted = GameState.apply_skill(str(offer["id"]))
+	if not accepted:
+		_show_notice("槽位已满或数值已达上限，先整理后再购买")
+		return
+	GameState.stones -= price
+	SignalsBus.market_choice.emit(offer["id"])
+	market_notice_text = "购买了 %s。" % str(offer.get("name", offer.get("id", "")))
+	market_offers = _roll_offers(4, true)
+	_render_market()
+	_update_hud()
+
+func _show_notice(text: String) -> void:
+	market_notice_text = text
+	if is_instance_valid(market_notice_label):
+		market_notice_label.text = text
+	message_label.text = text
+	var tween := create_tween()
+	tween.tween_interval(1.3)
+	tween.tween_callback(func():
+		if message_label.text == text:
+			message_label.text = ""
+	)
+
+func _market_inventory_panel() -> Control:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(0, 138)
+	panel.add_theme_stylebox_override("panel", _stylebox(Color(0.018, 0.031, 0.035, 0.9), Color(0.35, 0.88, 0.82, 0.32), 1, 6))
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 9)
+	margin.add_theme_constant_override("margin_bottom", 9)
+	panel.add_child(margin)
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 18)
+	margin.add_child(columns)
+	columns.add_child(_market_weapon_column())
+	columns.add_child(_market_item_column())
+	columns.add_child(_market_stat_column())
+	return panel
+
+func _market_column(title_text: String, width: float) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(width, 0)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 6)
+	var title := Label.new()
+	title.text = title_text
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color("#e8b259"))
+	box.add_child(title)
+	return box
+
+func _market_weapon_column() -> VBoxContainer:
+	var box := _market_column("装备 / 备炼", 340)
+	var active := HBoxContainer.new()
+	active.add_theme_constant_override("separation", 6)
+	box.add_child(active)
+	for i in range(4):
+		active.add_child(_market_weapon_slot_button("active", i, Vector2(42, 42)))
+	var reserve_line := HBoxContainer.new()
+	reserve_line.add_theme_constant_override("separation", 6)
+	box.add_child(reserve_line)
+	var reserve_label := Label.new()
+	reserve_label.text = "备炼"
+	reserve_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	reserve_label.add_theme_font_size_override("font_size", 13)
+	reserve_label.add_theme_color_override("font_color", Color("#c8a2ff"))
+	reserve_line.add_child(reserve_label)
+	for i in range(GameState.weapon_reserve_capacity()):
+		reserve_line.add_child(_market_weapon_slot_button("reserve", i, Vector2(42, 42)))
+	return box
+
+func _market_weapon_slot_button(place: String, index: int, size: Vector2) -> Button:
+	var slot := _hud_icon_button(size)
+	slot.set_meta("weapon_place", place)
+	slot.set_meta("weapon_index", index)
+	if place == "active" and index < GameState.active_weapons.size():
+		var w: Dictionary = GameState.active_weapons[index]
+		slot.icon = AssetDB.tex(_offer_art_id(str(w.get("id", ""))))
+		slot.tooltip_text = _weapon_tooltip(index, w)
+		_set_weapon_button_style(slot, int(w.get("tier", 1)))
+	elif place == "reserve" and index < GameState.weapon_reserve.size():
+		var w: Dictionary = GameState.weapon_reserve[index]
+		slot.icon = AssetDB.tex(_offer_art_id(str(w.get("id", ""))))
+		slot.tooltip_text = _weapon_tooltip(index, w, true)
+		_set_weapon_button_style(slot, int(w.get("tier", 1)))
+	else:
+		slot.icon = AssetDB.tex("pickup_qi")
+		slot.tooltip_text = "空法器槽" if place == "active" else "空备炼栏"
+		_set_weapon_button_style(slot, 1, true)
+	slot.pressed.connect(func(): _show_weapon_detail(place, index))
+	slot.gui_input.connect(func(event): _on_weapon_slot_gui_input(event, place, index))
+	return slot
+
+func _market_item_column() -> VBoxContainer:
+	var box := _market_column("道具 %d/%d" % [GameState.bag_used_slots(), int(GameState.stats.get("bag_capacity", 5))], 300)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 5)
+	box.add_child(row)
+	for i in range(int(GameState.stats.get("bag_capacity", 5))):
+		var slot := _hud_icon_button(Vector2(36, 36))
+		if i < GameState.bag.size():
+			var item: Dictionary = GameState.bag[i]
+			slot.icon = AssetDB.tex(_offer_art_id(str(item.get("id", ""))))
+			slot.tooltip_text = _item_tooltip(i, item)
+			_set_item_button_style(slot, item)
+		else:
+			slot.icon = AssetDB.tex("pickup_stone")
+			slot.tooltip_text = "空道具格"
+			_set_item_button_style(slot, {}, true)
+		var slot_index := i
+		slot.pressed.connect(func(): _show_item_detail(slot_index))
+		row.add_child(slot)
+	return box
+
+func _market_stat_column() -> VBoxContainer:
+	var box := _market_column("角色数值", 320)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 3)
+	box.add_child(grid)
+	for def in HUD_STAT_DEFS.slice(0, 8):
+		var label := Label.new()
+		label.text = "%s %s" % [str(def.get("label", "")), _hud_stat_value(def)]
+		label.add_theme_font_size_override("font_size", 14)
+		label.add_theme_color_override("font_color", Color("#cfe5e0"))
+		label.tooltip_text = _stat_tooltip(def)
+		grid.add_child(label)
+	return box
+
+func _clear_detail() -> void:
+	if is_instance_valid(detail_layer):
+		detail_layer.queue_free()
+	detail_layer = CanvasLayer.new()
+	detail_layer.layer = 20
+	add_child(detail_layer)
+
+func _show_detail(title_text: String, lines: Array, actions: Array) -> void:
+	_clear_detail()
+	var root := ColorRect.new()
+	root.color = Color(0.0, 0.0, 0.0, 0.36)
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	detail_layer.add_child(root)
+	var panel := PanelContainer.new()
+	panel.anchor_left = 0.32
+	panel.anchor_top = 0.18
+	panel.anchor_right = 0.68
+	panel.anchor_bottom = 0.78
+	panel.add_theme_stylebox_override("panel", _stylebox(Color(0.012, 0.024, 0.028, 0.96), Color("#e8b259"), 2, 8))
+	root.add_child(panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 20)
+	margin.add_theme_constant_override("margin_right", 20)
+	margin.add_theme_constant_override("margin_top", 18)
+	margin.add_theme_constant_override("margin_bottom", 18)
+	panel.add_child(margin)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	margin.add_child(box)
+	var title := Label.new()
+	title.text = title_text
+	_apply_display_font(title, 34, Color("#e8b259"), 2)
+	box.add_child(title)
+	var body := Label.new()
+	body.text = "\n".join(lines)
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_font_size_override("font_size", 17)
+	body.add_theme_color_override("font_color", Color("#eaf6ff"))
+	box.add_child(body)
+	var action_row := HBoxContainer.new()
+	action_row.add_theme_constant_override("separation", 10)
+	box.add_child(action_row)
+	for action in actions:
+		var button := Button.new()
+		button.text = str(action.get("label", ""))
+		button.custom_minimum_size = Vector2(112, 42)
+		button.focus_mode = Control.FOCUS_NONE
+		button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		button.disabled = bool(action.get("disabled", false))
+		var callback: Callable = action.get("callback", Callable())
+		if callback.is_valid():
+			button.pressed.connect(callback)
+		action_row.add_child(button)
+	var close := Button.new()
+	close.text = "关闭"
+	close.custom_minimum_size = Vector2(92, 42)
+	close.focus_mode = Control.FOCUS_NONE
+	close.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	close.pressed.connect(_clear_detail)
+	action_row.add_child(close)
+
+func _show_weapon_detail(place: String, index: int) -> void:
+	if suppress_next_weapon_detail:
+		suppress_next_weapon_detail = false
+		return
+	var weapon := GameState.weapon_at(place, index)
+	if weapon.is_empty():
+		_show_notice("这个槽位为空")
+		return
+	var tier := int(weapon.get("tier", 1))
+	var title := "%s · %s" % [str(weapon.get("name", "")), GameState.weapon_tier_name(tier)]
+	var lines := _weapon_tooltip(index, weapon, place == "reserve").split("\n")
+	lines.append("出售：+%d灵石" % GameState.weapon_sell_value(weapon))
+	if tier >= GameState.WEAPON_TIER_MAX:
+		lines.append("已达满品，不能继续合并升级。")
+	elif GameState.can_merge_weapon_at(place, index):
+		lines.append("已有同名同品法器，可合并升至%s。" % GameState.weapon_tier_name(tier + 1))
+	else:
+		lines.append("需要另一件同名同品法器才能合并升级。")
+	if place == "active" and GameState.weapon_reserve.size() >= GameState.weapon_reserve_capacity():
+		lines.append("备炼栏满时，可拖拽到指定备炼槽交换。")
+	if place == "reserve" and GameState.active_weapons.size() >= int(GameState.stats.get("weapon_slots", 4)):
+		lines.append("主装备栏满时，可拖拽到指定主槽交换。")
+	var actions: Array = []
+	actions.append({
+		"label": "合并升级",
+		"disabled": not GameState.can_merge_weapon_at(place, index),
+		"callback": func():
+			if GameState.merge_weapon_at(place, index):
+				_after_inventory_action("法器已合并升级")
+	})
+	if place == "active":
+		actions.append({
+			"label": "移至备炼",
+			"disabled": GameState.weapon_reserve.size() >= GameState.weapon_reserve_capacity(),
+			"callback": func():
+				if GameState.move_weapon("active", index, "reserve", GameState.weapon_reserve.size()):
+					_after_inventory_action("已移至备炼栏")
+		})
+	else:
+		actions.append({
+			"label": "装入主槽",
+			"disabled": GameState.active_weapons.size() >= int(GameState.stats.get("weapon_slots", 4)),
+			"callback": func():
+				if GameState.move_weapon("reserve", index, "active", GameState.active_weapons.size()):
+					_after_inventory_action("已装入主装备栏")
+		})
+	actions.append({
+		"label": "出售",
+		"callback": func():
+			if GameState.sell_weapon_at(place, index):
+				_after_inventory_action("已出售法器")
+	})
+	_show_detail(title, lines, actions)
+
+func _show_item_detail(index: int) -> void:
+	if index < 0 or index >= GameState.bag.size():
+		_show_notice("这个道具格为空")
+		return
+	var item: Dictionary = GameState.bag[index]
+	var title := str(item.get("name", "道具"))
+	var lines := _item_tooltip(index, item).split("\n")
+	lines.append("出售：+%d灵石" % GameState.item_sell_value(item))
+	var actions: Array = [{
+		"label": "出售",
+		"callback": func():
+			if GameState.sell_item_at(index):
+				_after_inventory_action("已出售道具")
+	}]
+	_show_detail(title, lines, actions)
+
+func _on_stat_gui_input(event: InputEvent, def: Dictionary) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		_show_stat_detail(def)
+
+func _show_stat_detail(def: Dictionary) -> void:
+	var title := str(def.get("label", "数值"))
+	var lines := [_stat_tooltip(def), "云游商会和境界机缘会刷出可提升数值的商品。"]
+	_show_detail(title, lines, [])
+
+func _on_weapon_slot_gui_input(event: InputEvent, place: String, index: int) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			if not GameState.weapon_at(place, index).is_empty():
+				weapon_drag_source = {"place": place, "index": index}
+		else:
+			if weapon_drag_source.is_empty():
+				return
+			var target := _weapon_slot_at_position(event.global_position)
+			if not target.is_empty() and (str(target["place"]) != str(weapon_drag_source["place"]) or int(target["index"]) != int(weapon_drag_source["index"])):
+				if GameState.move_weapon(str(weapon_drag_source["place"]), int(weapon_drag_source["index"]), str(target["place"]), int(target["index"])):
+					suppress_next_weapon_detail = true
+					_after_inventory_action("已调整法器槽位")
+				else:
+					_show_notice("目标槽位不可用")
+			weapon_drag_source = {}
+
+func _weapon_slot_at_position(pos: Vector2) -> Dictionary:
+	for i in range(weapon_slot_buttons.size()):
+		var button: Button = weapon_slot_buttons[i]
+		if button.visible and button.get_global_rect().has_point(pos):
+			return {"place": "active", "index": i}
+	for i in range(weapon_reserve_buttons.size()):
+		var button: Button = weapon_reserve_buttons[i]
+		if button.visible and button.get_global_rect().has_point(pos):
+			return {"place": "reserve", "index": i}
+	if market_open and is_instance_valid(overlay_layer):
+		for button in overlay_layer.find_children("*", "Button", true, false):
+			if not button.has_meta("weapon_place"):
+				continue
+			var weapon_button: Button = button
+			if weapon_button.visible and weapon_button.get_global_rect().has_point(pos):
+				return {"place": str(weapon_button.get_meta("weapon_place")), "index": int(weapon_button.get_meta("weapon_index"))}
+	return {}
+
+func _after_inventory_action(text: String) -> void:
+	_clear_detail()
+	if player != null:
+		player.hp = min(player.hp, float(GameState.stats.get("max_hp", 110)))
+		player.shield = min(player.shield, float(GameState.stats.get("max_qi_shield", 60)))
+	_reset_weapon_cooldowns()
+	_update_hud()
+	if market_open:
+		_render_market()
+	_show_notice(text)
 
 func _on_ascension(realm_name: String) -> void:
 	message_label.text = "渡劫成功 · %s" % realm_name
@@ -1858,10 +2336,7 @@ func _weapon_tooltip(index: int, weapon: Dictionary, reserve := false) -> String
 	return "\n".join(lines)
 
 func _bag_used_slots() -> int:
-	var used := 0
-	for item in GameState.bag:
-		used += int(item.get("slots", 1))
-	return used
+	return GameState.bag_used_slots()
 
 func _item_tooltip(index: int, item: Dictionary) -> String:
 	var element_value = item.get("element", null)

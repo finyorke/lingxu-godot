@@ -20,6 +20,21 @@ func _run() -> void:
 	var arena = load("res://Scenes/Arena.tscn").instantiate()
 	get_tree().root.add_child(arena)
 	await get_tree().process_frame
+	arena._open_market("测试机缘")
+	await get_tree().process_frame
+	if not arena.market_open or arena.market_offers.size() != 4:
+		failures.append("choice market should render four offers")
+	arena._close_market()
+	GameState.stones = 50
+	arena._open_spirit_shop()
+	await get_tree().process_frame
+	if not arena.market_open or arena.market_mode != "spirit_shop" or arena.market_offers.size() != 4:
+		failures.append("timed spirit shop should render four purchasable offers")
+	arena._refresh_spirit_shop()
+	if GameState.stones >= 50:
+		failures.append("spirit shop refresh should spend stones")
+	arena._close_market()
+	await get_tree().process_frame
 
 	var poison_enemy := _spawn_test_enemy(arena, Vector2(220, 0), 8.0)
 	arena._hit_enemy(ConfigDB.entry("weapons", "shigu_sting").duplicate(true), poison_enemy, poison_enemy.global_position, true)
