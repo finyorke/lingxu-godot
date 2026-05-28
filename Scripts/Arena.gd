@@ -725,6 +725,9 @@ func _offer_button(offer: Dictionary) -> Button:
 	var data: Dictionary = offer.get("data", {})
 	var tier := int(offer.get("tier", data.get("tier", 1)))
 	var tier_color := GameState.weapon_tier_color(tier)
+	var merge_target := {}
+	if kind_id == "weapon":
+		merge_target = GameState.weapon_merge_target(str(offer.get("id", "")), tier)
 	var normal_bg := Color(0.026, 0.04, 0.045, 0.96)
 	var normal_border := Color(0.38, 0.9, 0.82, 0.38)
 	if kind_id == "weapon":
@@ -742,6 +745,8 @@ func _offer_button(offer: Dictionary) -> Button:
 		b.disabled = true
 		b.modulate = Color(0.66, 0.7, 0.68, 1.0)
 		b.tooltip_text = "法器槽与备炼栏已满，且没有同名同品可合成"
+	elif kind_id == "weapon" and not merge_target.is_empty():
+		b.tooltip_text = "选择后合成已有同名同品法器，不占用空槽"
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -773,7 +778,10 @@ func _offer_button(offer: Dictionary) -> Button:
 	box.add_child(name)
 	var kind := Label.new()
 	if kind_id == "weapon":
-		kind.text = "%s · %s · %s" % [_kind_name(kind_id), GameState.weapon_tier_name(tier), _offer_school_name(offer)]
+		if merge_target.is_empty():
+			kind.text = "%s · %s · %s" % [_kind_name(kind_id), GameState.weapon_tier_name(tier), _offer_school_name(offer)]
+		else:
+			kind.text = "%s · 升至%s · %s" % [_kind_name(kind_id), GameState.weapon_tier_name(tier + 1), _offer_school_name(offer)]
 	else:
 		kind.text = "%s · %s" % [_kind_name(kind_id), _offer_school_name(offer)]
 	kind.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -816,6 +824,11 @@ func _offer_effect_rows(offer: Dictionary) -> Array:
 			var element := str(data.get("element", ""))
 			var klass := str(data.get("class", ""))
 			var tier := int(data.get("tier", 1))
+			var merge_target := GameState.weapon_merge_target(str(data.get("id", offer.get("id", ""))), tier)
+			if not merge_target.is_empty():
+				var upgrade_row := _effect_row("weapon_tier", "选择后", "升至%s" % GameState.weapon_tier_name(tier + 1), element)
+				upgrade_row["color"] = GameState.weapon_tier_color(tier + 1)
+				rows.append(upgrade_row)
 			var tier_row := _effect_row("weapon_tier", "品阶", GameState.weapon_tier_name(tier), element)
 			tier_row["color"] = GameState.weapon_tier_color(tier)
 			rows.append(tier_row)

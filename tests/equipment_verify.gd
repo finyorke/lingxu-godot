@@ -1,5 +1,11 @@
 extends SceneTree
 
+func _weapon(config: Node, id: String, tier: int) -> Dictionary:
+	var weapon: Dictionary = config.call("entry", "weapons", id).duplicate(true)
+	weapon["id"] = id
+	weapon["tier"] = tier
+	return weapon
+
 func _init() -> void:
 	call_deferred("_run")
 
@@ -22,12 +28,33 @@ func _run() -> void:
 	game_state.set("affinity_id", "five")
 	game_state.set("active_roots", ["metal", "fire", "earth"])
 
+	var active_weapons: Array = []
+	var weapon_reserve: Array = []
+
+	stats["weapon_slots"] = 2
+	game_state.set("stats", stats)
+	if not bool(game_state.call("equip_weapon", "guanri_sword", 1)):
+		failures.append("first weapon should enter an active slot with open capacity")
+	if not bool(game_state.call("equip_weapon", "guanri_sword", 1)):
+		failures.append("same-name same-tier weapon should merge even when an active slot is empty")
+	active_weapons = game_state.get("active_weapons")
+	weapon_reserve = game_state.get("weapon_reserve")
+	if active_weapons.size() != 1 or int(active_weapons[0].get("tier", 1)) != 2:
+		failures.append("duplicate same-tier weapon should upgrade the existing weapon before filling empty slots")
+	if weapon_reserve.size() != 0:
+		failures.append("same-name merge should not spill into reserve while active slots are open")
+
+	stats["weapon_slots"] = 1
+	game_state.set("stats", stats)
+	game_state.set("active_weapons", [])
+	game_state.set("weapon_reserve", [])
+
 	if not bool(game_state.call("equip_weapon", "guanri_sword", 1)):
 		failures.append("first weapon should enter the active slot")
 	if not bool(game_state.call("equip_weapon", "hantan_sword", 1)):
 		failures.append("second weapon should enter the reserve instead of replacing")
-	var active_weapons: Array = game_state.get("active_weapons")
-	var weapon_reserve: Array = game_state.get("weapon_reserve")
+	active_weapons = game_state.get("active_weapons")
+	weapon_reserve = game_state.get("weapon_reserve")
 	if active_weapons.size() != 1 or str(active_weapons[0].get("id", "")) != "guanri_sword":
 		failures.append("full active slots should not be replaced by a new weapon")
 	if weapon_reserve.size() != 1 or str(weapon_reserve[0].get("id", "")) != "hantan_sword":
@@ -59,6 +86,17 @@ func _run() -> void:
 	active_weapons = game_state.get("active_weapons")
 	if int(active_weapons[0].get("tier", 1)) != 3:
 		failures.append("two tier-2 guanri_sword copies should make one tier-3 copy")
+
+	game_state.set("active_weapons", [_weapon(config, "guanri_sword", 2)])
+	game_state.set("weapon_reserve", [_weapon(config, "guanri_sword", 2), _weapon(config, "hantan_sword", 1)])
+	if not bool(game_state.call("equip_weapon", "guanri_sword", 2)):
+		failures.append("full slots should still merge into the matching equipped weapon")
+	active_weapons = game_state.get("active_weapons")
+	weapon_reserve = game_state.get("weapon_reserve")
+	if int(active_weapons[0].get("tier", 1)) != 3:
+		failures.append("active same-name same-tier weapon should be upgraded before reserve copies")
+	if int(weapon_reserve[0].get("tier", 1)) != 2:
+		failures.append("reserve copy should remain unchanged when an equipped copy can merge")
 
 	stats = config.call("table", "stats").duplicate(true)
 	stats["crit_chance"] = 0.0
