@@ -24,7 +24,7 @@ test("Godot web build boots and reaches arena", async ({ page }) => {
   await page.mouse.click(350, 230);
   await page.waitForTimeout(1000);
   await page.screenshot({ path: "test-results/web-root-choice.png", fullPage: true });
-  await page.mouse.click(690, 405);
+  await page.mouse.click(500, 560);
   await page.waitForTimeout(12000);
 
   await page.screenshot({ path: "test-results/web-arena.png", fullPage: true });
