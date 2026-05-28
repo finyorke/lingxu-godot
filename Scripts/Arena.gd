@@ -1745,7 +1745,7 @@ func _render_market() -> void:
 	if market_mode == "spirit_shop":
 		title.text = "%s · 灵石购物" % market_reason
 	else:
-		title.text = "%s · 已择定" % market_reason if market_choice_completed else "%s · 四选一" % market_reason
+		title.text = "%s · 已选待确认" % market_reason if market_choice_completed else "%s · 四选一" % market_reason
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_apply_display_font(title, 46, Color("#e8b259"), 3)
 	header.add_child(title)
@@ -1770,16 +1770,6 @@ func _render_market() -> void:
 		close.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		close.pressed.connect(_close_market)
 		header.add_child(close)
-	else:
-		var proceed := Button.new()
-		proceed.text = "继续历练"
-		proceed.custom_minimum_size = Vector2(116, 44)
-		proceed.focus_mode = Control.FOCUS_NONE
-		proceed.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		proceed.disabled = not market_choice_completed
-		proceed.tooltip_text = "先择一道机缘" if proceed.disabled else "关闭机缘界面，继续战斗"
-		proceed.pressed.connect(_close_market)
-		header.add_child(proceed)
 	market_notice_label = Label.new()
 	market_notice_label.text = market_notice_text
 	market_notice_label.custom_minimum_size = Vector2(0, 24)
@@ -1901,8 +1891,8 @@ func _offer_button(offer: Dictionary) -> Button:
 	if kind_id == "weapon":
 		normal_bg = normal_bg.lerp(tier_color, 0.18)
 		normal_border = Color(tier_color.r, tier_color.g, tier_color.b, 0.82)
-	var choice_completed := market_mode == "choice" and market_choice_completed
-	var selected := choice_completed and str(offer.get("id", "")) == market_selected_offer_id
+	var choice_has_selection := market_mode == "choice" and market_choice_completed
+	var selected := choice_has_selection and str(offer.get("id", "")) == market_selected_offer_id
 	if selected:
 		normal_bg = normal_bg.lerp(Color("#e8b259"), 0.18)
 		normal_border = Color("#ffe9a8")
@@ -1910,6 +1900,8 @@ func _offer_button(offer: Dictionary) -> Button:
 	b.custom_minimum_size = OFFER_CARD_SIZE
 	b.text = ""
 	b.focus_mode = Control.FOCUS_NONE
+	b.set_meta("market_offer_id", str(offer.get("id", "")))
+	b.set_meta("market_offer_kind", kind_id)
 	b.add_theme_stylebox_override("normal", _stylebox(normal_bg, normal_border, 2 if kind_id == "weapon" else 1, 6))
 	b.add_theme_stylebox_override("hover", _stylebox(Color(0.045, 0.072, 0.076, 0.98).lerp(tier_color, 0.15 if kind_id == "weapon" else 0.0), Color("#e8b259"), 2, 6))
 	b.add_theme_stylebox_override("pressed", _stylebox(Color(0.055, 0.066, 0.055, 0.98), Color("#e8b259"), 2, 6))
@@ -1917,11 +1909,12 @@ func _offer_button(offer: Dictionary) -> Button:
 		b.add_theme_stylebox_override("disabled", _stylebox(normal_bg, Color("#ffe9a8"), 3, 6))
 	else:
 		b.add_theme_stylebox_override("disabled", _stylebox(Color(0.02, 0.024, 0.026, 0.82), Color(0.36, 0.38, 0.38, 0.42), 1, 6))
-	b.disabled = choice_completed
-	if choice_completed:
-		b.tooltip_text = "已选择此机缘" if selected else "本次机缘已择定"
-		if not selected:
-			b.modulate = Color(0.58, 0.62, 0.62, 1.0)
+	if choice_has_selection:
+		if not block_reason.is_empty():
+			b.modulate = Color(0.76, 0.78, 0.75, 1.0)
+			b.tooltip_text = block_reason
+		else:
+			b.tooltip_text = "已选择此机缘，点击其他机缘可更换" if selected else "点击改选此机缘"
 	elif not block_reason.is_empty():
 		b.modulate = Color(0.76, 0.78, 0.75, 1.0)
 		b.tooltip_text = block_reason
@@ -2321,9 +2314,6 @@ func _element_color(element: String) -> Color:
 			return Color("#5fe0c8")
 
 func _choose_offer(offer: Dictionary) -> void:
-	if market_mode == "choice" and market_choice_completed:
-		_show_notice("本次机缘已择定，整备完成后继续历练")
-		return
 	var block_reason := _offer_block_reason(offer)
 	if not block_reason.is_empty():
 		_show_notice(block_reason)
@@ -2331,6 +2321,45 @@ func _choose_offer(offer: Dictionary) -> void:
 	if market_mode == "spirit_shop":
 		_buy_shop_offer(offer)
 		return
+	if market_mode == "choice":
+		market_choice_completed = true
+		market_selected_offer_id = str(offer.get("id", ""))
+		market_notice_text = "已选择%s，可改选其他机缘或点击继续历练确认。" % str(offer.get("name", offer.get("id", "")))
+		_render_market()
+		return
+
+func _confirm_market_choice() -> void:
+	if market_mode != "choice":
+		_close_market()
+		return
+	if not market_choice_completed or market_selected_offer_id.is_empty():
+		_show_notice("先择一道机缘")
+		return
+	var offer := _selected_market_offer()
+	if offer.is_empty():
+		_show_notice("已选机缘不存在，请重新选择")
+		market_choice_completed = false
+		market_selected_offer_id = ""
+		_render_market()
+		return
+	if not _grant_market_offer(offer, "槽位已满或数值已达上限"):
+		return
+	var offer_name := str(offer.get("name", offer.get("id", "")))
+	SignalsBus.market_choice.emit(offer["id"])
+	_close_market()
+	_show_notice("已得%s，继续历练。" % offer_name)
+
+func _selected_market_offer() -> Dictionary:
+	for offer in market_offers:
+		if str(offer.get("id", "")) == market_selected_offer_id:
+			return offer
+	return {}
+
+func _grant_market_offer(offer: Dictionary, failure_text: String) -> bool:
+	var block_reason := _offer_block_reason(offer)
+	if not block_reason.is_empty():
+		_show_notice(block_reason)
+		return false
 	var accepted := true
 	match offer["kind"]:
 		"weapon":
@@ -2342,32 +2371,16 @@ func _choose_offer(offer: Dictionary) -> void:
 		"skill":
 			accepted = GameState.apply_skill(str(offer["id"]))
 	if not accepted:
-		_show_notice("槽位已满或数值已达上限")
-		return
-	SignalsBus.market_choice.emit(offer["id"])
-	market_choice_completed = true
-	market_selected_offer_id = str(offer.get("id", ""))
-	market_notice_text = "已得%s，可整备法器与法宝。" % str(offer.get("name", offer.get("id", "")))
-	_render_market()
-	_update_hud()
+		_show_notice(failure_text)
+		return false
+	return true
 
 func _buy_shop_offer(offer: Dictionary) -> void:
 	var price := int(offer.get("price", _offer_price(offer)))
 	if GameState.stones < price:
 		_show_notice("灵石不足，不能购买")
 		return
-	var accepted := true
-	match offer["kind"]:
-		"weapon":
-			accepted = GameState.equip_weapon(str(offer["id"]), int(offer.get("tier", 1)))
-			if accepted:
-				_reset_weapon_cooldowns()
-		"item":
-			accepted = GameState.add_item(str(offer["id"]))
-		"skill":
-			accepted = GameState.apply_skill(str(offer["id"]))
-	if not accepted:
-		_show_notice("槽位已满或数值已达上限，先整理后再购买")
+	if not _grant_market_offer(offer, "槽位已满或数值已达上限，先整理后再购买"):
 		return
 	GameState.stones -= price
 	SignalsBus.market_choice.emit(offer["id"])
@@ -2390,7 +2403,8 @@ func _show_notice(text: String) -> void:
 
 func _market_inventory_panel() -> Control:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(0, 138)
+	panel.name = "MarketInventoryPanel"
+	panel.custom_minimum_size = Vector2(0, 150)
 	panel.add_theme_stylebox_override("panel", _stylebox(Color(0.018, 0.031, 0.035, 0.9), Color(0.35, 0.88, 0.82, 0.32), 1, 6))
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 12)
@@ -2400,10 +2414,28 @@ func _market_inventory_panel() -> Control:
 	panel.add_child(margin)
 	var columns := HBoxContainer.new()
 	columns.add_theme_constant_override("separation", 18)
+	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	margin.add_child(columns)
 	columns.add_child(_market_weapon_column())
 	columns.add_child(_market_item_column())
+	if market_mode == "choice":
+		columns.add_child(_market_continue_button())
 	return panel
+
+func _market_inventory_frame(node_name: String, content: Control, width: float) -> PanelContainer:
+	var frame := PanelContainer.new()
+	frame.name = node_name
+	frame.custom_minimum_size = Vector2(width, 0)
+	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	frame.add_theme_stylebox_override("panel", _stylebox(Color(0.014, 0.026, 0.03, 0.92), Color(0.35, 0.88, 0.82, 0.42), 1, 5))
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	frame.add_child(margin)
+	margin.add_child(content)
+	return frame
 
 func _market_column(title_text: String, width: float) -> VBoxContainer:
 	var box := VBoxContainer.new()
@@ -2417,8 +2449,8 @@ func _market_column(title_text: String, width: float) -> VBoxContainer:
 	box.add_child(title)
 	return box
 
-func _market_weapon_column() -> VBoxContainer:
-	var box := _market_column("装备 / 备炼", 340)
+func _market_weapon_column() -> PanelContainer:
+	var box := _market_column("装备", 340)
 	var active := HBoxContainer.new()
 	active.add_theme_constant_override("separation", 6)
 	box.add_child(active)
@@ -2435,7 +2467,7 @@ func _market_weapon_column() -> VBoxContainer:
 	reserve_line.add_child(reserve_label)
 	for i in range(GameState.weapon_reserve_capacity()):
 		reserve_line.add_child(_market_weapon_slot_button("reserve", i, Vector2(42, 42)))
-	return box
+	return _market_inventory_frame("MarketWeaponFrame", box, 380)
 
 func _market_weapon_slot_button(place: String, index: int, size: Vector2) -> Button:
 	var slot := _hud_icon_button(size)
@@ -2459,8 +2491,8 @@ func _market_weapon_slot_button(place: String, index: int, size: Vector2) -> But
 	slot.gui_input.connect(func(event): _on_weapon_slot_gui_input(event, place, index))
 	return slot
 
-func _market_item_column() -> VBoxContainer:
-	var box := _market_column("道具 %d/%d" % [GameState.bag_used_slots(), int(GameState.stats.get("bag_capacity", 5))], 300)
+func _market_item_column() -> PanelContainer:
+	var box := _market_column("道具 %d/%d" % [GameState.bag_used_slots(), int(GameState.stats.get("bag_capacity", 5))], 420)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 5)
 	box.add_child(row)
@@ -2478,7 +2510,20 @@ func _market_item_column() -> VBoxContainer:
 		var slot_index := i
 		slot.pressed.connect(func(): _show_item_detail(slot_index))
 		row.add_child(slot)
-	return box
+	return _market_inventory_frame("MarketItemFrame", box, 460)
+
+func _market_continue_button() -> Button:
+	var proceed := Button.new()
+	proceed.name = "MarketContinueButton"
+	proceed.text = "继续历练"
+	proceed.custom_minimum_size = Vector2(140, 64)
+	proceed.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	proceed.focus_mode = Control.FOCUS_NONE
+	proceed.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	proceed.disabled = not market_choice_completed
+	proceed.tooltip_text = "先择一道机缘" if proceed.disabled else "确认选择并继续战斗"
+	proceed.pressed.connect(_confirm_market_choice)
+	return proceed
 
 func _market_stat_panel() -> PanelContainer:
 	var panel := PanelContainer.new()
