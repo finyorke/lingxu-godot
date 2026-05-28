@@ -1,6 +1,7 @@
 extends Node
 
 const DISPLAY_FONT := preload("res://assets/fonts/MaShanZheng-Regular.ttf")
+const BODY_FONT := preload("res://assets/fonts/NotoSansCJKsc-Regular.otf")
 const ELEMENTS := ["metal", "wood", "water", "fire", "earth"]
 const ROOT_INFO := {
 	"metal": {"name": "金·御剑", "seal": "庚金剑印", "tag": "飞剑 / 贯穿 / 高频单体", "desc": "剑气凝霜，斩线破阵。", "icon": "icon_metal", "color": "#eaf6ff"},
@@ -16,7 +17,13 @@ var root_buttons := {}
 var root_card_views := {}
 var preview_label: Label
 var confirm_button: Button
-var affinity_option: OptionButton
+var affinity_options: Array = []
+var affinity_index := 0
+var affinity_badge_panel: PanelContainer
+var affinity_badge_label: Label
+var affinity_name_label: Label
+var affinity_summary_label: Label
+var affinity_counter_label: Label
 
 func _ready() -> void:
 	_ensure_input_map()
@@ -133,6 +140,8 @@ func show_root_choice() -> void:
 	sealed.clear()
 	root_buttons.clear()
 	root_card_views.clear()
+	affinity_options.clear()
+	affinity_index = 0
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	current_screen = root
@@ -154,8 +163,7 @@ func show_root_choice() -> void:
 	subtitle.anchor_top = 0.132
 	subtitle.anchor_right = 0.92
 	subtitle.anchor_bottom = 0.18
-	subtitle.add_theme_font_size_override("font_size", 23)
-	subtitle.add_theme_color_override("font_color", Color("#d8f6ef"))
+	_apply_body_font(subtitle, 23, Color("#d8f6ef"))
 	root.add_child(subtitle)
 
 	var grid := GridContainer.new()
@@ -170,35 +178,31 @@ func show_root_choice() -> void:
 	for e in ELEMENTS:
 		grid.add_child(_root_card(e))
 
-	var controls_panel := _content_panel(root, Rect2(0.08, 0.61, 0.42, 0.29), Color(0.018, 0.032, 0.035, 0.78), Color(0.36, 0.88, 0.8, 0.38), 8)
+	var controls_panel := _content_panel(root, Rect2(0.065, 0.615, 0.44, 0.275), Color(0.018, 0.032, 0.035, 0.8), Color(0.36, 0.88, 0.8, 0.42), 8)
 	var controls: VBoxContainer = controls_panel.get_node("Margin/Box")
-	controls.add_theme_constant_override("separation", 13)
+	controls.add_theme_constant_override("separation", 10)
 	var label := Label.new()
 	label.text = "修行体质"
-	_apply_display_font(label, 34, Color("#e8b259"), 2)
+	_apply_display_font(label, 32, Color("#e8b259"), 2)
 	controls.add_child(label)
-	affinity_option = OptionButton.new()
-	affinity_option.custom_minimum_size = Vector2(0, 48)
-	affinity_option.add_theme_font_size_override("font_size", 21)
-	affinity_option.add_theme_stylebox_override("normal", _panel_style(Color(0.016, 0.026, 0.03, 0.86), Color(0.36, 0.88, 0.8, 0.45), 1, 5, 10))
-	_add_affinity("五行灵根：五行皆通，属性加成互转", "five")
+	_add_affinity("五行灵根", "五行皆通，属性加成互转", "five", "五", "#e8b259")
 	for e in ELEMENTS:
-		_add_affinity("%s单灵根：本系大幅增伤，异系只吃基础" % GameState.root_name(e), "single_%s" % e)
+		_add_affinity("%s单灵根" % GameState.root_name(e), "本系大幅增伤，异系只吃基础", "single_%s" % e, GameState.root_name(e), str(ROOT_INFO[e]["color"]))
 	var duals := [["metal", "water"], ["water", "wood"], ["wood", "fire"], ["fire", "earth"], ["earth", "metal"]]
 	for pair in duals:
-		_add_affinity("%s%s双修：双系增伤并互转" % [GameState.root_name(pair[0]), GameState.root_name(pair[1])], "dual_%s_%s" % [pair[0], pair[1]])
-	controls.add_child(affinity_option)
+		_add_affinity("%s%s双修" % [GameState.root_name(pair[0]), GameState.root_name(pair[1])], "双系增伤并互转", "dual_%s_%s" % [pair[0], pair[1]], "%s%s" % [GameState.root_name(pair[0]), GameState.root_name(pair[1])], str(ROOT_INFO[pair[0]]["color"]))
+	controls.add_child(_affinity_selector())
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
 	controls.add_child(row)
 	var random_btn := _small_button("随机抉择", Color("#5fe0c8"))
 	random_btn.pressed.connect(_random_roots)
 	row.add_child(random_btn)
-	confirm_button = _primary_button("确认 · 入墟")
+	confirm_button = _primary_button("确认入墟")
 	confirm_button.pressed.connect(_confirm_roots)
 	row.add_child(confirm_button)
 
-	var preview_panel := _content_panel(root, Rect2(0.525, 0.61, 0.395, 0.29), Color(0.018, 0.032, 0.035, 0.78), Color("#e8b259"), 8)
+	var preview_panel := _content_panel(root, Rect2(0.525, 0.615, 0.405, 0.275), Color(0.018, 0.032, 0.035, 0.8), Color("#e8b259"), 8)
 	var preview_box: VBoxContainer = preview_panel.get_node("Margin/Box")
 	var preview_title := Label.new()
 	preview_title.text = "道途回响"
@@ -206,8 +210,8 @@ func show_root_choice() -> void:
 	preview_box.add_child(preview_title)
 	preview_label = Label.new()
 	preview_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	preview_label.add_theme_font_size_override("font_size", 22)
-	preview_label.add_theme_color_override("font_color", Color("#eaf6ff"))
+	_apply_body_font(preview_label, 19, Color("#eaf6ff"))
+	preview_label.add_theme_constant_override("line_spacing", 3)
 	preview_box.add_child(preview_label)
 
 	var back := _small_button("回宗门", Color("#8ea9a3"))
@@ -219,15 +223,101 @@ func show_root_choice() -> void:
 	root.add_child(back)
 	_update_root_preview()
 
-func _add_affinity(text: String, id: String) -> void:
-	affinity_option.add_item(text)
-	affinity_option.set_item_metadata(affinity_option.item_count - 1, id)
+func _add_affinity(name: String, summary: String, id: String, icon: String, color: String) -> void:
+	affinity_options.append({
+		"name": name,
+		"summary": summary,
+		"id": id,
+		"icon": icon,
+		"color": color
+	})
+
+func _affinity_selector() -> Control:
+	var shell := PanelContainer.new()
+	shell.custom_minimum_size = Vector2(0, 92)
+	shell.add_theme_stylebox_override("panel", _panel_style(Color(0.012, 0.024, 0.028, 0.92), Color(0.36, 0.88, 0.8, 0.44), 1, 7, 8))
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	shell.add_child(margin)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	margin.add_child(row)
+
+	var prev := _nav_button("<")
+	prev.pressed.connect(func(): _cycle_affinity(-1))
+	row.add_child(prev)
+
+	affinity_badge_panel = PanelContainer.new()
+	affinity_badge_panel.custom_minimum_size = Vector2(72, 72)
+	row.add_child(affinity_badge_panel)
+
+	var badge_margin := MarginContainer.new()
+	badge_margin.add_theme_constant_override("margin_left", 4)
+	badge_margin.add_theme_constant_override("margin_right", 4)
+	badge_margin.add_theme_constant_override("margin_top", 4)
+	badge_margin.add_theme_constant_override("margin_bottom", 4)
+	affinity_badge_panel.add_child(badge_margin)
+
+	affinity_badge_label = Label.new()
+	affinity_badge_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	affinity_badge_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	affinity_badge_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_apply_display_font(affinity_badge_label, 32, Color("#fff8e8"), 2)
+	badge_margin.add_child(affinity_badge_label)
+
+	var text_box := VBoxContainer.new()
+	text_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_box.add_theme_constant_override("separation", 2)
+	row.add_child(text_box)
+
+	affinity_name_label = Label.new()
+	_apply_body_font(affinity_name_label, 24, Color("#fff8e8"))
+	affinity_name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	text_box.add_child(affinity_name_label)
+
+	affinity_summary_label = Label.new()
+	affinity_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_apply_body_font(affinity_summary_label, 18, Color("#cfe5e0"))
+	text_box.add_child(affinity_summary_label)
+
+	affinity_counter_label = Label.new()
+	_apply_body_font(affinity_counter_label, 16, Color("#7fd8ce"))
+	text_box.add_child(affinity_counter_label)
+
+	var next := _nav_button(">")
+	next.pressed.connect(func(): _cycle_affinity(1))
+	row.add_child(next)
+	_update_affinity_selector()
+	return shell
+
+func _cycle_affinity(delta: int) -> void:
+	if affinity_options.is_empty():
+		return
+	affinity_index = (affinity_index + delta + affinity_options.size()) % affinity_options.size()
+	_update_affinity_selector()
+
+func _update_affinity_selector() -> void:
+	if affinity_options.is_empty() or affinity_name_label == null:
+		return
+	var option: Dictionary = affinity_options[affinity_index]
+	var accent := Color(str(option.get("color", "#e8b259")))
+	affinity_badge_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.012, 0.024, 0.028, 0.96).lerp(accent, 0.24), Color(accent.r, accent.g, accent.b, 0.86), 2, 14, 4))
+	affinity_badge_label.text = str(option.get("icon", "五"))
+	affinity_badge_label.add_theme_color_override("font_color", accent.lightened(0.32))
+	affinity_name_label.text = str(option.get("name", "五行灵根"))
+	affinity_summary_label.text = str(option.get("summary", ""))
+	affinity_counter_label.text = "%02d / %02d" % [affinity_index + 1, affinity_options.size()]
 
 func _root_card(element: String) -> Button:
 	var info: Dictionary = ROOT_INFO[element]
 	var accent := Color(str(info["color"]))
 	var button := Button.new()
-	button.custom_minimum_size = Vector2(310, 342)
+	button.custom_minimum_size = Vector2(304, 342)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.toggle_mode = true
 	button.text = ""
@@ -242,38 +332,61 @@ func _root_card(element: String) -> Button:
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	margin.add_theme_constant_override("margin_left", 18)
-	margin.add_theme_constant_override("margin_right", 18)
-	margin.add_theme_constant_override("margin_top", 16)
-	margin.add_theme_constant_override("margin_bottom", 16)
+	margin.add_theme_constant_override("margin_left", 16)
+	margin.add_theme_constant_override("margin_right", 16)
+	margin.add_theme_constant_override("margin_top", 14)
+	margin.add_theme_constant_override("margin_bottom", 14)
 	button.add_child(margin)
 
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 8)
+	box.add_theme_constant_override("separation", 7)
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(box)
 
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 10)
+	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(header)
+
+	header.add_child(_element_badge(element, 52, accent))
+
+	var header_text := VBoxContainer.new()
+	header_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header_text.add_theme_constant_override("separation", 1)
+	header_text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	header.add_child(header_text)
+
 	var seal := Label.new()
 	seal.text = str(info["seal"])
-	seal.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	seal.add_theme_font_size_override("font_size", 18)
-	seal.add_theme_color_override("font_color", Color("#cfe5e0"))
+	_apply_body_font(seal, 18, Color("#cfe5e0"))
 	seal.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(seal)
+	header_text.add_child(seal)
+
+	var seal_hint := Label.new()
+	seal_hint.text = "封印后不进入本局掉落池"
+	_apply_body_font(seal_hint, 14, Color(0.8, 0.93, 0.9, 0.72))
+	seal_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	header_text.add_child(seal_hint)
+
+	var icon_panel := PanelContainer.new()
+	icon_panel.custom_minimum_size = Vector2(0, 104)
+	icon_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.01, 0.02, 0.022, 0.54).lerp(accent, 0.12), Color(accent.r, accent.g, accent.b, 0.28), 1, 7, 6))
+	box.add_child(icon_panel)
 
 	var icon := TextureRect.new()
 	icon.texture = AssetDB.tex(str(info["icon"]))
-	icon.custom_minimum_size = Vector2(0, 126)
+	icon.custom_minimum_size = Vector2(0, 96)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.modulate = Color(1.05, 1.05, 1.05, 1.0)
+	icon.modulate = Color(1.08, 1.08, 1.08, 1.0)
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(icon)
+	icon_panel.add_child(icon)
 
 	var title := Label.new()
 	title.text = str(info["name"])
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_apply_display_font(title, 34, accent, 2)
+	_apply_display_font(title, 31, accent.lightened(0.18), 2)
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(title)
 
@@ -281,8 +394,7 @@ func _root_card(element: String) -> Button:
 	tag.text = str(info["tag"])
 	tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	tag.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	tag.add_theme_font_size_override("font_size", 18)
-	tag.add_theme_color_override("font_color", Color("#fff8e8"))
+	_apply_body_font(tag, 17, Color("#fff8e8"))
 	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(tag)
 
@@ -290,47 +402,50 @@ func _root_card(element: String) -> Button:
 	desc.text = str(info["desc"])
 	desc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc.add_theme_font_size_override("font_size", 17)
-	desc.add_theme_color_override("font_color", Color("#cfe5e0"))
+	_apply_body_font(desc, 16, Color("#cfe5e0"))
 	desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(desc)
+
+	var status_panel := PanelContainer.new()
+	status_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	status_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.015, 0.07, 0.06, 0.7), Color("#5fe0c8"), 1, 6, 4))
+	box.add_child(status_panel)
 
 	var status := Label.new()
 	status.text = "本局可用"
 	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	status.add_theme_font_size_override("font_size", 22)
-	status.add_theme_color_override("font_color", Color("#5fe0c8"))
+	_apply_body_font(status, 20, Color("#5fe0c8"))
 	status.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(status)
+	status_panel.add_child(status)
 
 	var seal_mark := Label.new()
-	seal_mark.text = "封"
-	seal_mark.anchor_left = 0.68
-	seal_mark.anchor_top = 0.12
-	seal_mark.anchor_right = 1.02
-	seal_mark.anchor_bottom = 0.52
-	seal_mark.rotation = -0.18
+	seal_mark.text = "封印"
+	seal_mark.anchor_left = 0.66
+	seal_mark.anchor_top = 0.055
+	seal_mark.anchor_right = 0.985
+	seal_mark.anchor_bottom = 0.205
+	seal_mark.rotation = -0.12
 	seal_mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	seal_mark.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_apply_display_font(seal_mark, 96, Color(0.95, 0.2, 0.16, 0.8), 3)
+	_apply_display_font(seal_mark, 40, Color(0.98, 0.28, 0.2, 0.9), 2)
 	seal_mark.visible = false
 	seal_mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	button.add_child(seal_mark)
 
-	root_card_views[element] = {"status": status, "seal_mark": seal_mark}
+	root_card_views[element] = {"status": status, "status_panel": status_panel, "seal_mark": seal_mark}
 	return button
 
 func _root_card_style(element: String, is_sealed: bool, hover: bool) -> StyleBoxFlat:
 	var accent := Color(str(ROOT_INFO[element]["color"]))
-	var bg_alpha := 0.1 if is_sealed else 0.2
+	var bg_alpha := 0.07 if is_sealed else 0.16
 	if hover and not is_sealed:
-		bg_alpha = 0.3
-	var border_alpha := 0.3 if is_sealed else (0.78 if hover else 0.5)
-	var bg := Color(0.012, 0.024, 0.026, 0.9)
+		bg_alpha = 0.24
+	var border_alpha := 0.26 if is_sealed else (0.84 if hover else 0.54)
+	var bg := Color(0.012, 0.024, 0.027, 0.92)
 	bg = bg.lerp(accent, bg_alpha)
 	var box := _panel_style(bg, Color(accent.r, accent.g, accent.b, border_alpha), 2 if hover else 1, 8, 10)
-	box.shadow_color = Color(accent.r, accent.g, accent.b, 0.22 if hover else 0.1)
-	box.shadow_size = 12 if hover else 6
+	box.shadow_color = Color(accent.r, accent.g, accent.b, 0.18 if hover else 0.08)
+	box.shadow_size = 14 if hover else 7
 	return box
 
 func _apply_display_font(control: Control, size: int, color: Color, outline_size := 0) -> void:
@@ -340,6 +455,26 @@ func _apply_display_font(control: Control, size: int, color: Color, outline_size
 	if outline_size > 0:
 		control.add_theme_constant_override("outline_size", outline_size)
 		control.add_theme_color_override("font_outline_color", Color(0.02, 0.04, 0.035, 0.92))
+
+func _apply_body_font(control: Control, size: int, color: Color) -> void:
+	control.add_theme_font_override("font", BODY_FONT)
+	control.add_theme_font_size_override("font_size", size)
+	control.add_theme_color_override("font_color", color)
+
+func _element_badge(element: String, size: int, accent: Color) -> PanelContainer:
+	var badge := PanelContainer.new()
+	badge.custom_minimum_size = Vector2(size, size)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_theme_stylebox_override("panel", _panel_style(Color(0.01, 0.02, 0.022, 0.95).lerp(accent, 0.22), Color(accent.r, accent.g, accent.b, 0.72), 2, int(size / 2), 4))
+
+	var label := Label.new()
+	label.text = GameState.root_name(element)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_apply_display_font(label, int(size * 0.54), accent.lightened(0.28), 2)
+	badge.add_child(label)
+	return badge
 
 func _content_panel(parent: Control, rect: Rect2, bg: Color, border: Color, radius := 8) -> PanelContainer:
 	var panel := PanelContainer.new()
@@ -385,6 +520,18 @@ func _make_rule(color: Color, alpha: float) -> ColorRect:
 	rule.custom_minimum_size = Vector2(1, 2)
 	rule.color = Color(color.r, color.g, color.b, alpha)
 	return rule
+
+func _nav_button(text: String) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = Vector2(44, 72)
+	button.focus_mode = Control.FOCUS_NONE
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_apply_body_font(button, 26, Color("#eaf6ff"))
+	button.add_theme_stylebox_override("normal", _panel_style(Color(0.018, 0.032, 0.035, 0.78), Color(0.36, 0.88, 0.8, 0.42), 1, 6, 6))
+	button.add_theme_stylebox_override("hover", _panel_style(Color(0.035, 0.06, 0.062, 0.92), Color("#e8b259"), 2, 6, 6))
+	button.add_theme_stylebox_override("pressed", _panel_style(Color(0.07, 0.065, 0.03, 0.96), Color("#fff4b8"), 2, 6, 6))
+	return button
 
 func _primary_button(text: String) -> Button:
 	var button := Button.new()
@@ -453,6 +600,12 @@ func _update_root_preview() -> void:
 			var status: Label = view["status"]
 			status.text = "已封印" if is_sealed else "本局可用"
 			status.add_theme_color_override("font_color", Color("#f27348") if is_sealed else Color("#5fe0c8"))
+		if view.has("status_panel"):
+			var status_panel: PanelContainer = view["status_panel"]
+			if is_sealed:
+				status_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.12, 0.035, 0.025, 0.72), Color("#f27348"), 1, 6, 4))
+			else:
+				status_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.015, 0.07, 0.06, 0.7), Color("#5fe0c8"), 1, 6, 4))
 		if view.has("seal_mark"):
 			var seal_mark: Label = view["seal_mark"]
 			seal_mark.visible = is_sealed
@@ -462,10 +615,14 @@ func _update_root_preview() -> void:
 		active_names.append(GameState.root_name(e))
 	GameState.active_roots = active
 	var lines := GameState.synergy_lines()
-	preview_label.text = "封印：%d / 2    道途：%s\n商店与 Boss 掉落只围绕未封灵根，中性/通用卡照常出现。\n%s\n多属性法器伤害倍率：1系100%% / 2系116%% / 3系132%% / 4系150%%。" % [
+	var shown_lines := lines.duplicate()
+	if shown_lines.size() > 3:
+		shown_lines = shown_lines.slice(0, 3)
+		shown_lines.append("等")
+	preview_label.text = "封印：%d / 2    道途：%s\n商店/Boss：仅围绕未封灵根，中性/通用卡照常出现。\n相生连招：%s\n法器倍率：1系100%% / 2系116%% / 3系132%% / 4系150%%。" % [
 		sealed.size(),
 		" / ".join(active_names),
-		"\n".join(lines)
+		" / ".join(shown_lines)
 	]
 
 func _confirm_roots() -> void:
@@ -474,7 +631,10 @@ func _confirm_roots() -> void:
 	for e in ELEMENTS:
 		if sealed.has(e):
 			sealed_arr.append(e)
-	var affinity := str(affinity_option.get_item_metadata(affinity_option.selected))
+	var affinity := "five"
+	if not affinity_options.is_empty():
+		var option: Dictionary = affinity_options[affinity_index]
+		affinity = str(option.get("id", "five"))
 	GameState.start_run(active, sealed_arr, affinity)
 	_start_arena()
 
