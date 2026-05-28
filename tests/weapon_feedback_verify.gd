@@ -1,19 +1,33 @@
-extends Node
+extends SceneTree
 
 const ENEMY_SCENE := preload("res://Scenes/Enemies/Enemy.tscn")
 
-func _ready() -> void:
+var config: Node
+var asset_db: Node
+var game_state: Node
+
+func _init() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
 	var failures: Array = []
-	ConfigDB.load_all()
-	AssetDB.load_manifest()
-	GameState.start_run(["metal", "wood", "water", "fire", "earth"], [], "five")
+	config = root.get_node_or_null("ConfigDB")
+	asset_db = root.get_node_or_null("AssetDB")
+	game_state = root.get_node_or_null("GameState")
+	if config == null or asset_db == null or game_state == null:
+		push_error("autoloads were not available for weapon feedback verification")
+		quit(1)
+		return
+	config.call("load_all")
+	asset_db.call("load_manifest")
+	game_state.call("start_run", ["metal", "wood", "water", "fire", "earth"], [], "five")
+	var stats: Dictionary = game_state.get("stats")
+	stats["crit_chance"] = 0.0
+	game_state.set("stats", stats)
 
 	var arena = load("res://Scenes/Arena.tscn").instantiate()
-	get_tree().root.add_child(arena)
-	await get_tree().process_frame
+	root.add_child(arena)
+	await process_frame
 
 	_check_fire_feedback(arena, failures, "pojun_dagger", Vector2(230, 20), "WeaponPath_dash")
 	_check_fire_feedback(arena, failures, "frost_needle", Vector2(260, -40), "WeaponPath_fan")
@@ -39,13 +53,30 @@ func _run() -> void:
 	if not _has_node_named(arena, "WeaponArea_explode_exploding_charm"):
 		failures.append("explode secondary did not create source area feedback")
 
+	_clear_enemies(arena)
+	stats = game_state.get("stats")
+	stats["fire_execute"] = true
+	stats["execute_threshold"] = 1.0
+	stats["execute_mult"] = 1.0
+	game_state.set("stats", stats)
+	var crit_enemy := _spawn_test_enemy(arena, Vector2(210, -60), 20.0)
+	var crit_result: Dictionary = arena._hit_enemy(_weapon("ember_sword"), crit_enemy, crit_enemy.global_position, true)
+	if not bool(crit_result.get("is_crit", false)):
+		failures.append("forced fire execute did not produce a critical hit")
+	if not _has_node_named(arena, "CriticalBurstRing"):
+		failures.append("critical hit did not create burst ring feedback")
+	if not _has_node_named(arena, "CriticalCrossSlash"):
+		failures.append("critical hit did not create cross-slash feedback")
+	if not _has_node_named(arena, "CriticalHitText"):
+		failures.append("critical hit did not create floating text feedback")
+
 	if failures.is_empty():
-		print("WEAPON FEEDBACK OK: source badges and class-specific attack feedback verified.")
-		get_tree().quit(0)
+		print("WEAPON FEEDBACK OK: source badges, class-specific attacks, and critical hit feedback verified.")
+		quit(0)
 	else:
 		for failure in failures:
 			push_error(failure)
-		get_tree().quit(1)
+		quit(1)
 
 func _check_fire_feedback(arena: Node, failures: Array, weapon_id: String, target_pos: Vector2, expected_prefix: String) -> void:
 	_clear_enemies(arena)
@@ -55,7 +86,7 @@ func _check_fire_feedback(arena: Node, failures: Array, weapon_id: String, targe
 		failures.append("%s did not create %s feedback" % [weapon_id, expected_prefix])
 
 func _weapon(id: String) -> Dictionary:
-	var weapon: Dictionary = ConfigDB.entry("weapons", id).duplicate(true)
+	var weapon: Dictionary = config.call("entry", "weapons", id).duplicate(true)
 	weapon["id"] = id
 	weapon["tier"] = 1
 	return weapon
