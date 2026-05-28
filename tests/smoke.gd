@@ -18,6 +18,7 @@ func _init() -> void:
 		"res://assets/backgrounds/main_menu.png",
 		"res://assets/backgrounds/arena.png",
 		"res://assets/sprites/yunxi.png",
+		"res://assets/sprites/yunxi_walk_24.png",
 		"res://assets/enemies/enemies_sheet.png",
 		"res://assets/enemies/serpent_boss.png",
 		"res://assets/enemies/sword_demon.png",
@@ -68,6 +69,31 @@ func _init() -> void:
 	font_util.ensure_fallback(display_font, body_font)
 	if not _font_has_fallback(display_font, body_font.resource_path):
 		failures.append("display font must fall back to NotoSansCJKsc-Regular.otf")
+	var yunxi_motion_info: Dictionary = asset_db.manifest.get("char_yunxi_walk_24", {})
+	if int(yunxi_motion_info.get("frames", 0)) < 20:
+		failures.append("char_yunxi_walk_24 must provide at least 20 continuous animation frames")
+	var yunxi_motion_grid: Array = yunxi_motion_info.get("grid", [])
+	if yunxi_motion_grid.size() != 2 or int(yunxi_motion_grid[0]) != 6 or int(yunxi_motion_grid[1]) != 4:
+		failures.append("char_yunxi_walk_24 must use the expected 6x4 frame grid")
+	var yunxi_motion_tex: Texture2D = asset_db.tex("char_yunxi_walk_24")
+	if yunxi_motion_tex == null or yunxi_motion_tex.get_width() != 1536 or yunxi_motion_tex.get_height() != 1024:
+		failures.append("char_yunxi_walk_24 texture did not load at the expected 1536x1024 sheet size")
+	var yunxi_motion_image := Image.new()
+	var yunxi_motion_file := FileAccess.open("res://assets/sprites/yunxi_walk_24.png", FileAccess.READ)
+	var yunxi_motion_error := ERR_FILE_CANT_OPEN
+	if yunxi_motion_file != null:
+		yunxi_motion_error = yunxi_motion_image.load_png_from_buffer(yunxi_motion_file.get_buffer(yunxi_motion_file.get_length()))
+	if yunxi_motion_error != OK or yunxi_motion_image.is_empty():
+		failures.append("char_yunxi_walk_24 source image could not be inspected")
+	else:
+		var cell_size := 256
+		var frame_0 := yunxi_motion_image.get_region(Rect2i(0, 0, cell_size, cell_size))
+		var frame_6 := yunxi_motion_image.get_region(Rect2i(0, cell_size, cell_size, cell_size))
+		var frame_12 := yunxi_motion_image.get_region(Rect2i(0, cell_size * 2, cell_size, cell_size))
+		if _frame_diff(frame_0, frame_6) < 1200.0:
+			failures.append("char_yunxi_walk_24 frame 6 is too similar to frame 0")
+		if _frame_diff(frame_0, frame_12) < 1200.0:
+			failures.append("char_yunxi_walk_24 frame 12 must be a distinct opposite walk pose")
 	if failures.is_empty():
 		print("SMOKE OK: data, CJK font, generated assets, and main scene are present.")
 		quit(0)
@@ -81,3 +107,12 @@ func _font_has_fallback(font: Font, fallback_path: String) -> bool:
 		if fallback.resource_path == fallback_path:
 			return true
 	return false
+
+func _frame_diff(a: Image, b: Image) -> float:
+	var total := 0.0
+	for y in range(a.get_height()):
+		for x in range(a.get_width()):
+			var ca := a.get_pixel(x, y)
+			var cb := b.get_pixel(x, y)
+			total += absf(ca.r - cb.r) + absf(ca.g - cb.g) + absf(ca.b - cb.b) + absf(ca.a - cb.a)
+	return total
