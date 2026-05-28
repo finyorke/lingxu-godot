@@ -150,23 +150,24 @@ func _setup_hud() -> void:
 	info_label.add_theme_color_override("font_color", Color("#eaf6ff"))
 	top.add_child(info_label)
 	var stat_panel := PanelContainer.new()
+	stat_panel.name = "HudStatPanel"
 	stat_panel.anchor_left = 1.0
 	stat_panel.anchor_top = 0.0
 	stat_panel.anchor_right = 1.0
 	stat_panel.anchor_bottom = 0.0
-	stat_panel.offset_left = -246
+	stat_panel.offset_left = -220
 	stat_panel.offset_top = 150
 	stat_panel.offset_right = -28
-	stat_panel.offset_bottom = 790
-	stat_panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.018, 0.032, 0.038, 0.76), Color("#5fe0c8"), 1, 6, 6, 5))
+	stat_panel.offset_bottom = 670
+	stat_panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.018, 0.032, 0.038, 0.76), Color("#5fe0c8"), 1, 6, 5, 4))
 	root.add_child(stat_panel)
 	var stat_box := VBoxContainer.new()
-	stat_box.add_theme_constant_override("separation", 4)
+	stat_box.add_theme_constant_override("separation", 3)
 	stat_panel.add_child(stat_box)
 	var stat_title := Label.new()
 	stat_title.text = "数值"
 	stat_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stat_title.add_theme_font_size_override("font_size", 16)
+	stat_title.add_theme_font_size_override("font_size", 15)
 	stat_title.add_theme_color_override("font_color", Color("#e8b259"))
 	stat_box.add_child(stat_title)
 	stat_rows.clear()
@@ -178,18 +179,19 @@ func _setup_hud() -> void:
 		stat_box.add_child(stat_entry["panel"])
 		stat_rows.append(stat_entry)
 	var weapon_panel := PanelContainer.new()
+	weapon_panel.name = "HudWeaponPanel"
 	weapon_panel.anchor_left = 1.0
 	weapon_panel.anchor_top = 0.0
 	weapon_panel.anchor_right = 1.0
 	weapon_panel.anchor_bottom = 0.0
-	weapon_panel.offset_left = -462
+	weapon_panel.offset_left = -410
 	weapon_panel.offset_top = 24
 	weapon_panel.offset_right = -28
 	weapon_panel.offset_bottom = 132
-	weapon_panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.02, 0.04, 0.045, 0.72), Color("#5fe0c8"), 1, 6, 7, 5))
+	weapon_panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.02, 0.04, 0.045, 0.72), Color("#5fe0c8"), 1, 6, 6, 5))
 	root.add_child(weapon_panel)
 	var weapon_box := VBoxContainer.new()
-	weapon_box.add_theme_constant_override("separation", 6)
+	weapon_box.add_theme_constant_override("separation", 5)
 	weapon_panel.add_child(weapon_box)
 	var weapon_title := Label.new()
 	weapon_title.text = "装备"
@@ -198,7 +200,7 @@ func _setup_hud() -> void:
 	weapon_title.add_theme_color_override("font_color", Color("#e8b259"))
 	weapon_box.add_child(weapon_title)
 	var weapon_slots := HBoxContainer.new()
-	weapon_slots.add_theme_constant_override("separation", 7)
+	weapon_slots.add_theme_constant_override("separation", 6)
 	weapon_box.add_child(weapon_slots)
 	weapon_slot_buttons.clear()
 	for i in range(4):
@@ -311,14 +313,14 @@ func _hud_icon_button(size: Vector2) -> Button:
 
 func _stat_row_control(def: Dictionary) -> Dictionary:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(0, 34)
+	panel.custom_minimum_size = Vector2(0, 30)
 	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.03, 0.055, 0.06, 0.74), Color(0.35, 0.88, 0.82, 0.28), 1, 5, 5, 3))
+	panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.03, 0.055, 0.06, 0.74), Color(0.35, 0.88, 0.82, 0.28), 1, 5, 4, 3))
 	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 5)
+	line.add_theme_constant_override("separation", 4)
 	panel.add_child(line)
 	var icon := TextureRect.new()
-	icon.custom_minimum_size = Vector2(24, 24)
+	icon.custom_minimum_size = Vector2(22, 22)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -327,15 +329,15 @@ func _stat_row_control(def: Dictionary) -> Dictionary:
 	label.text = str(def.get("label", ""))
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_font_size_override("font_size", 12)
 	label.add_theme_color_override("font_color", Color("#cfe5e0"))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	line.add_child(label)
 	var value := Label.new()
-	value.custom_minimum_size = Vector2(52, 0)
+	value.custom_minimum_size = Vector2(46, 0)
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	value.add_theme_font_size_override("font_size", 13)
+	value.add_theme_font_size_override("font_size", 12)
 	value.add_theme_color_override("font_color", Color("#eaf6ff"))
 	value.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	line.add_child(value)
