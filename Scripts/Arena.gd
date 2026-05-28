@@ -296,15 +296,17 @@ func _update_weapons(delta: float) -> void:
 		var weapon: Dictionary = GameState.active_weapons[i]
 		weapon_cds[i] = max(0.0, float(weapon_cds[i]) - delta)
 		if weapon_cds[i] <= 0.0:
-			_fire_weapon(weapon)
+			_fire_weapon(weapon, i)
 			var interval := float(weapon.get("cooldown", 1.0))
 			interval /= 1.0 + max(-0.75, float(GameState.stats.get("attack_speed", 0.0)))
 			interval *= 1.0 - clamp(float(GameState.stats.get("attack_interval_pct", 0.0)), -0.5, 0.5)
 			weapon_cds[i] = max(0.12, interval)
 
-func _fire_weapon(weapon: Dictionary) -> void:
+func _fire_weapon(weapon: Dictionary, slot_index := -1) -> void:
 	var klass := str(weapon.get("class", "flying_sword"))
+	var origin := _weapon_origin(slot_index)
 	if klass == "shield":
+		_play_weapon_release(weapon, slot_index, player.global_position)
 		var shield_gain := 10.0
 		for effect in weapon.get("on_hit", []):
 			if str(effect.get("effect", "")) == "grant_shield":
@@ -315,26 +317,150 @@ func _fire_weapon(weapon: Dictionary) -> void:
 		_spawn_fx(player.global_position, "fx_water", 0.25)
 		return
 	if klass == "orbit" or klass == "aura":
+		_play_weapon_release(weapon, slot_index, player.global_position + player.facing * 80.0)
 		var range := float(weapon.get("range", 180)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
-		for enemy in enemies:
-			if player.global_position.distance_squared_to(enemy.global_position) <= range * range:
-				_hit_enemy(weapon, enemy)
+		var hit_limit := -1
+		if klass == "orbit":
+			hit_limit = max(2, int(weapon.get("tier", 1)) + 2)
+		for enemy in _enemies_in_radius(player.global_position, range, hit_limit, true):
+			_hit_enemy(weapon, enemy)
 		_spawn_fx(player.global_position, "fx_%s" % weapon.get("element", "metal"), 0.2)
 		return
 	var target := _select_target(weapon)
 	if target == null:
 		return
+	var target_pos := target.global_position
+	_play_weapon_release(weapon, slot_index, target_pos)
 	if klass == "area":
 		var radius := float(weapon.get("radius", 110)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
-		for enemy in enemies:
-			if enemy.global_position.distance_squared_to(target.global_position) <= radius * radius:
-				_hit_enemy(weapon, enemy)
-		_spawn_fx(target.global_position, "fx_%s" % weapon.get("element", "metal"), 0.32)
+		_hit_area_weapon(weapon, target_pos, radius)
+		return
+	if klass == "talisman":
+		var radius := float(weapon.get("radius", 88)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
+		_hit_area_weapon(weapon, target_pos, radius, 5)
+		return
+	if klass == "dash_blade":
+		_hit_line_weapon(weapon, origin, target_pos, 42.0, int(weapon.get("pierce", 1)) + 1)
+		return
+	if klass == "hammer":
+		var radius := float(weapon.get("radius", 86)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
+		_hit_area_weapon(weapon, target_pos, radius, 4)
+		return
+	if klass == "spike":
+		_hit_line_weapon(weapon, origin, target_pos, 34.0, int(weapon.get("pierce", 2)) + 1)
+		return
+	if klass == "needle":
+		_fire_spread_projectiles(weapon, origin, target_pos, 4, 0.12, 0.46, {"hit_radius": 12.0, "visual_scale": 0.085, "proj_speed": float(weapon.get("proj_speed", 720.0)) * 1.08})
+		return
+	if klass == "thorn":
+		_fire_spread_projectiles(weapon, origin, target_pos, 3, 0.20, 0.68, {"hit_radius": 16.0, "visual_scale": 0.105})
+		return
+	if klass == "summon":
+		_fire_summon_projectiles(weapon, origin, target)
 		return
 	var projectile: LingxuProjectile = PROJECTILE_SCENE.instantiate()
-	projectile.setup(weapon, player.global_position, target.global_position)
+	projectile.setup(weapon, origin, target_pos)
 	add_child(projectile)
 	projectiles.append(projectile)
+
+func _play_weapon_release(weapon: Dictionary, slot_index: int, target_pos: Vector2) -> void:
+	if player != null and player.has_method("trigger_weapon_attack"):
+		player.trigger_weapon_attack(weapon, slot_index, target_pos)
+
+func _weapon_origin(slot_index: int) -> Vector2:
+	if player != null and player.has_method("weapon_muzzle_global_position"):
+		return player.weapon_muzzle_global_position(slot_index)
+	return player.global_position
+
+func _spawn_weapon_projectile(weapon: Dictionary, origin: Vector2, target_pos: Vector2, angle_offset := 0.0) -> void:
+	var aim := target_pos - origin
+	if aim.length_squared() < 4.0:
+		aim = player.facing if player != null else Vector2.RIGHT
+	if aim.length_squared() < 0.01:
+		aim = Vector2.RIGHT
+	var projectile: LingxuProjectile = PROJECTILE_SCENE.instantiate()
+	projectile.setup(weapon, origin, origin + aim.rotated(angle_offset))
+	add_child(projectile)
+	projectiles.append(projectile)
+
+func _hit_area_weapon(weapon: Dictionary, center: Vector2, radius: float, max_hits := -1) -> void:
+	for enemy in _enemies_in_radius(center, radius, max_hits, true):
+		_hit_enemy(weapon, enemy, center)
+	_spawn_fx(center, "fx_%s" % weapon.get("element", "metal"), 0.32)
+
+func _hit_line_weapon(weapon: Dictionary, origin: Vector2, target_pos: Vector2, width: float, max_hits: int) -> void:
+	var dir: Vector2 = target_pos - origin
+	var length: float = dir.length()
+	if length < 4.0:
+		return
+	var dir_norm: Vector2 = dir / length
+	var candidates: Array = []
+	for enemy in enemies:
+		if enemy == null or not is_instance_valid(enemy):
+			continue
+		var rel: Vector2 = enemy.global_position - origin
+		var along: float = rel.dot(dir_norm)
+		if along < -12.0 or along > length + 72.0:
+			continue
+		var closest: Vector2 = origin + dir_norm * along
+		var hit_width: float = width + float(enemy.radius)
+		if enemy.global_position.distance_squared_to(closest) <= hit_width * hit_width:
+			candidates.append({"enemy": enemy, "along": along})
+	candidates.sort_custom(func(a, b): return float(a["along"]) < float(b["along"]))
+	var hits := 0
+	for candidate in candidates:
+		if max_hits > 0 and hits >= max_hits:
+			break
+		var enemy: LingxuEnemy = candidate["enemy"]
+		_hit_enemy(weapon, enemy, enemy.global_position)
+		_spawn_fx(enemy.global_position, "fx_%s" % weapon.get("element", "metal"), 0.16)
+		hits += 1
+
+func _fire_spread_projectiles(weapon: Dictionary, origin: Vector2, target_pos: Vector2, count: int, spread: float, damage_mult: float, overrides := {}) -> void:
+	var middle := float(count - 1) * 0.5
+	for i in range(count):
+		var shot := _weapon_variant(weapon, damage_mult, overrides)
+		var offset := (float(i) - middle) * spread
+		_spawn_weapon_projectile(shot, origin, target_pos, offset)
+
+func _fire_summon_projectiles(weapon: Dictionary, origin: Vector2, primary: LingxuEnemy) -> void:
+	var count := 2 + clampi(int(weapon.get("tier", 1)), 1, 4)
+	var range := float(weapon.get("range", 420)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
+	var targets := _enemies_in_radius(player.global_position, range, count, true)
+	for i in range(count):
+		var target_pos := primary.global_position
+		if not targets.is_empty():
+			var summon_target: LingxuEnemy = targets[i % targets.size()]
+			target_pos = summon_target.global_position
+		var angle := float(i) / float(count) * TAU
+		var shot_origin := origin + Vector2.RIGHT.rotated(angle) * 22.0
+		var shot := _weapon_variant(weapon, 0.42, {"hit_radius": 15.0, "visual_scale": 0.095, "proj_speed": float(weapon.get("proj_speed", 560.0)) * rng.randf_range(0.92, 1.12)})
+		_spawn_weapon_projectile(shot, shot_origin, target_pos)
+
+func _weapon_variant(weapon: Dictionary, damage_mult: float, overrides := {}) -> Dictionary:
+	var variant := weapon.duplicate(true)
+	variant["base_damage"] = max(1.0, float(weapon.get("base_damage", 1.0)) * damage_mult)
+	for key in overrides.keys():
+		variant[key] = overrides[key]
+	return variant
+
+func _enemies_in_radius(center: Vector2, radius: float, max_hits := -1, nearest_first := false) -> Array:
+	var candidates: Array = []
+	var radius_sq := radius * radius
+	for enemy in enemies:
+		if enemy == null or not is_instance_valid(enemy):
+			continue
+		var d2 := center.distance_squared_to(enemy.global_position)
+		if d2 <= radius_sq:
+			candidates.append({"enemy": enemy, "d2": d2})
+	if nearest_first:
+		candidates.sort_custom(func(a, b): return float(a["d2"]) < float(b["d2"]))
+	var result: Array = []
+	for candidate in candidates:
+		if max_hits > 0 and result.size() >= max_hits:
+			break
+		result.append(candidate["enemy"])
+	return result
 
 func _select_target(weapon: Dictionary) -> LingxuEnemy:
 	var max_range := float(weapon.get("range", 360)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
