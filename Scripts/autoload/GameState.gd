@@ -153,6 +153,146 @@ func can_accept_weapon(weapon_id: String, tier := 1) -> bool:
 		return true
 	return active_weapons.size() < int(stats.get("weapon_slots", 4)) or weapon_reserve.size() < weapon_reserve_capacity()
 
+func weapon_sell_value(weapon: Dictionary) -> int:
+	var tier := clampi(int(weapon.get("tier", 1)), 1, WEAPON_TIER_MAX)
+	return 6 + (tier - 1) * 5
+
+func sell_weapon_at(place: String, index: int) -> bool:
+	var weapon := weapon_at(place, index)
+	if weapon.is_empty():
+		return false
+	var value := weapon_sell_value(weapon)
+	if not remove_weapon_at(place, index):
+		return false
+	stones += value
+	return true
+
+func weapon_at(place: String, index: int) -> Dictionary:
+	if place == "active":
+		if index >= 0 and index < active_weapons.size():
+			return active_weapons[index]
+	elif place == "reserve":
+		if index >= 0 and index < weapon_reserve.size():
+			return weapon_reserve[index]
+	return {}
+
+func remove_weapon_at(place: String, index: int) -> bool:
+	if place == "active":
+		if index < 0 or index >= active_weapons.size():
+			return false
+		active_weapons.remove_at(index)
+		SignalsBus.weapon_changed.emit(index, {})
+		return true
+	if place == "reserve":
+		if index < 0 or index >= weapon_reserve.size():
+			return false
+		weapon_reserve.remove_at(index)
+		return true
+	return false
+
+func move_weapon(from_place: String, from_index: int, to_place: String, to_index: int) -> bool:
+	if from_place == to_place and from_index == to_index:
+		return false
+	var weapon := weapon_at(from_place, from_index)
+	if weapon.is_empty():
+		return false
+	if from_place == "active" and to_place == "active":
+		if to_index < 0 or to_index >= active_weapons.size():
+			return false
+		var target: Dictionary = active_weapons[to_index]
+		active_weapons[to_index] = weapon
+		active_weapons[from_index] = target
+		SignalsBus.weapon_changed.emit(from_index, active_weapons[from_index])
+		SignalsBus.weapon_changed.emit(to_index, active_weapons[to_index])
+		return true
+	if from_place == "reserve" and to_place == "reserve":
+		if to_index < 0 or to_index >= weapon_reserve.size():
+			return false
+		var target: Dictionary = weapon_reserve[to_index]
+		weapon_reserve[to_index] = weapon
+		weapon_reserve[from_index] = target
+		return true
+	if from_place == "active" and to_place == "reserve":
+		if to_index >= 0 and to_index < weapon_reserve.size():
+			var target: Dictionary = weapon_reserve[to_index]
+			weapon_reserve[to_index] = weapon
+			active_weapons[from_index] = target
+			SignalsBus.weapon_changed.emit(from_index, target)
+			return true
+		if weapon_reserve.size() >= weapon_reserve_capacity():
+			return false
+		active_weapons.remove_at(from_index)
+		weapon_reserve.append(weapon)
+		SignalsBus.weapon_changed.emit(from_index, {})
+		return true
+	if from_place == "reserve" and to_place == "active":
+		if to_index >= 0 and to_index < active_weapons.size():
+			var target: Dictionary = active_weapons[to_index]
+			active_weapons[to_index] = weapon
+			weapon_reserve[from_index] = target
+			SignalsBus.weapon_changed.emit(to_index, weapon)
+			return true
+		if active_weapons.size() >= int(stats.get("weapon_slots", 4)):
+			return false
+		weapon_reserve.remove_at(from_index)
+		active_weapons.append(weapon)
+		SignalsBus.weapon_changed.emit(active_weapons.size() - 1, weapon)
+		return true
+	return false
+
+func can_merge_weapon_at(place: String, index: int) -> bool:
+	return not weapon_manual_merge_target(place, index).is_empty()
+
+func weapon_manual_merge_target(place: String, index: int) -> Dictionary:
+	var weapon := weapon_at(place, index)
+	if weapon.is_empty():
+		return {}
+	var weapon_id := str(weapon.get("id", ""))
+	var tier := clampi(int(weapon.get("tier", 1)), 1, WEAPON_TIER_MAX)
+	if tier >= WEAPON_TIER_MAX:
+		return {}
+	if place == "reserve":
+		for i in range(active_weapons.size()):
+			var active: Dictionary = active_weapons[i]
+			if str(active.get("id", "")) == weapon_id and int(active.get("tier", 1)) == tier:
+				return {"place": "active", "index": i}
+	for i in range(active_weapons.size()):
+		if place == "active" and i == index:
+			continue
+		var active: Dictionary = active_weapons[i]
+		if str(active.get("id", "")) == weapon_id and int(active.get("tier", 1)) == tier:
+			return {"place": "active", "index": i}
+	for i in range(weapon_reserve.size()):
+		if place == "reserve" and i == index:
+			continue
+		var reserve_weapon: Dictionary = weapon_reserve[i]
+		if str(reserve_weapon.get("id", "")) == weapon_id and int(reserve_weapon.get("tier", 1)) == tier:
+			return {"place": "reserve", "index": i}
+	return {}
+
+func merge_weapon_at(place: String, index: int) -> bool:
+	var weapon := weapon_at(place, index)
+	if weapon.is_empty():
+		return false
+	var tier := clampi(int(weapon.get("tier", 1)), 1, WEAPON_TIER_MAX)
+	if tier >= WEAPON_TIER_MAX:
+		return false
+	var match := weapon_manual_merge_target(place, index)
+	if match.is_empty():
+		return false
+	var target_place := place
+	var target_index := index
+	var consume_place := str(match["place"])
+	var consume_index := int(match["index"])
+	if place == "reserve" and consume_place == "active":
+		target_place = "active"
+		target_index = consume_index
+		consume_place = "reserve"
+		consume_index = index
+	_upgrade_weapon_at(target_place, target_index)
+	remove_weapon_at(consume_place, consume_index)
+	return true
+
 func weapon_merge_target(weapon_id: String, tier := 1) -> Dictionary:
 	var normalized_tier := clampi(int(tier), 1, WEAPON_TIER_MAX)
 	if normalized_tier >= WEAPON_TIER_MAX:
@@ -197,15 +337,25 @@ func weapon_tier_color(tier: int) -> Color:
 func weapon_tier_multiplier(tier: int) -> float:
 	return pow(1.7, float(clampi(tier, 1, WEAPON_TIER_MAX) - 1))
 
+func bag_used_slots() -> int:
+	var used := 0
+	for b in bag:
+		used += int(b.get("slots", 1))
+	return used
+
+func can_accept_item(item_id: String) -> bool:
+	var item := ConfigDB.entry("items", item_id)
+	if item.is_empty():
+		return false
+	var need := int(item.get("slots", 1))
+	return bag_used_slots() + need <= int(stats.get("bag_capacity", 5))
+
 func add_item(item_id: String) -> bool:
 	var item := ConfigDB.entry("items", item_id).duplicate(true)
 	if item.is_empty():
 		return false
-	var used := 0
-	for b in bag:
-		used += int(b.get("slots", 1))
 	var need := int(item.get("slots", 1))
-	if used + need > int(stats.get("bag_capacity", 5)):
+	if bag_used_slots() + need > int(stats.get("bag_capacity", 5)):
 		return false
 	item["id"] = item_id
 	bag.append(item)
@@ -213,15 +363,29 @@ func add_item(item_id: String) -> bool:
 	_apply_effects(item.get("cost_effects", {}))
 	return true
 
-func apply_skill(skill_id: String) -> void:
+func item_sell_value(item: Dictionary) -> int:
+	return max(3, 3 + int(item.get("slots", 1)) * 2)
+
+func sell_item_at(index: int) -> bool:
+	if index < 0 or index >= bag.size():
+		return false
+	var item: Dictionary = bag[index]
+	var value := item_sell_value(item)
+	bag.remove_at(index)
+	_rebuild_stats_from_sources()
+	stones += value
+	return true
+
+func apply_skill(skill_id: String) -> bool:
 	var skill := ConfigDB.entry("skills", skill_id)
 	if skill.is_empty():
-		return
+		return false
 	var current := int(skill_stacks.get(skill_id, 0))
 	if current >= int(skill.get("max_stacks", 1)):
-		return
+		return false
 	skill_stacks[skill_id] = current + 1
 	_apply_effects(skill.get("effects", {}))
+	return true
 
 func _apply_effects(effects: Dictionary) -> void:
 	for key in effects.keys():
@@ -233,6 +397,24 @@ func _apply_effects(effects: Dictionary) -> void:
 		else:
 			stats[key] = float(stats.get(key, 0.0)) + float(value)
 		SignalsBus.stat_changed.emit(key, stats[key])
+
+func _rebuild_stats_from_sources() -> void:
+	stats = ConfigDB.table("stats").duplicate(true)
+	_apply_affinity_base()
+	var realms: Array = ConfigDB.table("realms").get("realms", [])
+	for realm_def in realms:
+		var realm_id := str(realm_def.get("id", ""))
+		if applied_realms.has(realm_id):
+			_apply_effects(realm_def.get("bonus", {}))
+	for skill_id in skill_stacks.keys():
+		var skill := ConfigDB.entry("skills", str(skill_id))
+		if skill.is_empty():
+			continue
+		for _i in range(int(skill_stacks[skill_id])):
+			_apply_effects(skill.get("effects", {}))
+	for item in bag:
+		_apply_effects(item.get("effects", {}))
+		_apply_effects(item.get("cost_effects", {}))
 
 func weapon_element_count() -> int:
 	var seen := {}
