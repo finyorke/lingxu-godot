@@ -1,0 +1,20 @@
+extends Node
+
+signal player_damaged(amount)
+signal player_died
+signal player_levelup(level)
+signal ascension_started(realm)
+signal open_market(reason)
+signal enemy_damaged(enemy, amount, is_crit)
+signal enemy_died(enemy, pos)
+signal qi_collected(amount)
+signal stone_collected(amount)
+signal boss_spawned(id)
+signal run_ended(result, stats)
+signal market_offered(cards)
+signal market_choice(id)
+signal weapon_changed(slot, weapon)
+signal stat_changed(stat, value)
+signal roots_chosen(active_roots)
+signal hud_request_shake(intensity, duration)
+signal hud_request_hitstop(duration)

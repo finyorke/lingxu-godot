@@ -1,0 +1,68 @@
+{
+  "xie_wolf": {
+    "name": "邪狼",
+    "sprite": "xie_wolf",
+    "hp": 34,
+    "speed": 78,
+    "damage": 8,
+    "xp": 4,
+    "radius": 19,
+    "mass": 1.0,
+    "score": 8,
+    "contact_cooldown": 0.6
+  },
+  "miasma_toad": {
+    "name": "瘴蜮",
+    "sprite": "miasma_toad",
+    "hp": 52,
+    "speed": 56,
+    "damage": 9,
+    "xp": 6,
+    "radius": 21,
+    "mass": 1.1,
+    "score": 13,
+    "contact_cooldown": 0.8,
+    "ranged": true
+  },
+  "iron_puppet": {
+    "name": "玄甲傀",
+    "sprite": "iron_puppet",
+    "hp": 138,
+    "speed": 44,
+    "damage": 18,
+    "xp": 14,
+    "radius": 31,
+    "mass": 2.4,
+    "score": 32,
+    "contact_cooldown": 1.0
+  },
+  "serpent_boss": {
+    "name": "赤睛妖蟒",
+    "sprite": "serpent_boss",
+    "hp": 860,
+    "speed": 35,
+    "damage": 24,
+    "xp": 90,
+    "radius": 55,
+    "mass": 5.5,
+    "score": 220,
+    "contact_cooldown": 1.0,
+    "is_boss": true,
+    "hex_element": "earth"
+  },
+  "sword_demon": {
+    "name": "噬灵剑魔",
+    "sprite": "sword_demon",
+    "hp": 1600,
+    "speed": 40,
+    "damage": 28,
+    "xp": 200,
+    "radius": 60,
+    "mass": 6.0,
+    "score": 500,
+    "contact_cooldown": 0.9,
+    "is_boss": true,
+    "is_final": true,
+    "hex_element": "metal"
+  }
+}

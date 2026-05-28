@@ -1,0 +1,78 @@
+extends Node
+
+const ENEMY_SCENE := preload("res://Scenes/Enemies/Enemy.tscn")
+
+func _ready() -> void:
+	call_deferred("_run")
+
+func _run() -> void:
+	var failures: Array = []
+	ConfigDB.load_all()
+	AssetDB.load_manifest()
+	GameState.start_run(["metal", "wood", "water", "fire", "earth"], [], "five")
+	GameState.add_item("execute_jade")
+	GameState.add_item("execute_jade")
+	if abs(float(GameState.stats.get("execute_threshold", 0.0)) - 0.25) > 0.001:
+		failures.append("execute_threshold should use set/max semantics")
+	if abs(float(GameState.stats.get("execute_mult", 0.0)) - 1.75) > 0.001:
+		failures.append("execute_mult should use set/max semantics")
+
+	var arena = load("res://Scenes/Arena.tscn").instantiate()
+	get_tree().root.add_child(arena)
+	await get_tree().process_frame
+
+	var poison_enemy := _spawn_test_enemy(arena, Vector2(220, 0), 8.0)
+	arena._hit_enemy(ConfigDB.entry("weapons", "shigu_sting").duplicate(true), poison_enemy, poison_enemy.global_position, true)
+	if poison_enemy.dots.is_empty() or str(poison_enemy.dots[0].get("effect", "")) != "poison":
+		failures.append("shigu_sting did not apply poison DoT")
+	var poison_hp := poison_enemy.hp
+	poison_enemy.tick(0.5, arena.player)
+	if poison_enemy.hp >= poison_hp:
+		failures.append("poison DoT did not tick damage")
+
+	var fire_enemy := _spawn_test_enemy(arena, Vector2(250, 50), 8.0)
+	arena._hit_enemy(ConfigDB.entry("weapons", "ember_sword").duplicate(true), fire_enemy, fire_enemy.global_position, true)
+	if fire_enemy.dots.is_empty() or str(fire_enemy.dots[0].get("effect", "")) != "ignite":
+		failures.append("ember_sword did not apply ignite DoT")
+
+	var frost_enemy := _spawn_test_enemy(arena, Vector2(280, -40), 10.0)
+	var frost := ConfigDB.entry("weapons", "frost_needle").duplicate(true)
+	for i in range(5):
+		arena._hit_enemy(frost, frost_enemy, frost_enemy.global_position, true)
+	if frost_enemy.freeze_timer <= 0.0:
+		failures.append("frost_needle 5 chill stacks did not freeze")
+
+	var knock_enemy := _spawn_test_enemy(arena, Vector2(180, 0), 10.0)
+	var before := knock_enemy.global_position
+	arena._hit_enemy(ConfigDB.entry("weapons", "zhenyue_chu").duplicate(true), knock_enemy, knock_enemy.global_position, true)
+	knock_enemy.tick(0.16, arena.player)
+	if knock_enemy.global_position.distance_to(before) < 8.0:
+		failures.append("zhenyue_chu knockback did not move enemy")
+
+	var exec_enemy := _spawn_test_enemy(arena, Vector2(320, 0), 10.0)
+	exec_enemy.hp = exec_enemy.max_hp * 0.20
+	var execute_result: Dictionary = arena._hit_enemy(ConfigDB.entry("weapons", "ember_sword").duplicate(true), exec_enemy, exec_enemy.global_position, true)
+	if not bool(execute_result.get("is_crit", false)):
+		failures.append("execute_jade did not force fire crit below threshold")
+
+	var boss_data := ConfigDB.entry("enemies", "serpent_boss")
+	if str(boss_data.get("sprite", "")) != "serpent_boss":
+		failures.append("serpent_boss still points at the wrong sprite id")
+	if not FileAccess.file_exists("res://assets/enemies/serpent_boss.png"):
+		failures.append("missing serpent_boss.png asset")
+
+	if failures.is_empty():
+		print("ON_HIT OK: poison, ignite, freeze, knockback, execute, and serpent boss asset verified.")
+		get_tree().quit(0)
+	else:
+		for failure in failures:
+			push_error(failure)
+		get_tree().quit(1)
+
+func _spawn_test_enemy(arena: Node, pos: Vector2, scale: float) -> LingxuEnemy:
+	var enemy: LingxuEnemy = ENEMY_SCENE.instantiate()
+	enemy.position = pos
+	enemy.setup("xie_wolf", scale)
+	arena.add_child(enemy)
+	arena.enemies.append(enemy)
+	return enemy

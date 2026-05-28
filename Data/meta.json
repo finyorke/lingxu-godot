@@ -1,0 +1,18 @@
+{
+  "spirit_jade": 0,
+  "essence": 0,
+  "best_survive_time": 0.0,
+  "best_kills": 0,
+  "best_combo": 0,
+  "best_calamity": 0,
+  "runs_completed": 0,
+  "settings": {
+    "screen_shake": true,
+    "damage_numbers": true,
+    "crisis_warning": true,
+    "auto_burst": false,
+    "auto_skill": true,
+    "appearance": "female"
+  },
+  "equipment": {"weapon": null, "armor": null, "ring": null, "pill": null, "relic": null}
+}
