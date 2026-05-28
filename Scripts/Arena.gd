@@ -54,9 +54,11 @@ var weapon_label: Label
 var hp_value_label: Label
 var shield_value_label: Label
 var xp_value_label: Label
+var bag_title_label: Label
 var weapon_slot_buttons: Array = []
 var weapon_reserve_buttons: Array = []
-var stat_icon_buttons: Array = []
+var item_slot_buttons: Array = []
+var stat_rows: Array = []
 var message_label: Label
 
 func _ready() -> void:
@@ -134,45 +136,89 @@ func _setup_hud() -> void:
 	info_label.add_theme_font_size_override("font_size", 25)
 	info_label.add_theme_color_override("font_color", Color("#eaf6ff"))
 	top.add_child(info_label)
-	var weapon_panel := PanelContainer.new()
-	weapon_panel.custom_minimum_size = Vector2(370, 90)
-	weapon_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.02, 0.04, 0.045, 0.72), Color("#5fe0c8"), 1, 6))
-	top.add_child(weapon_panel)
-	var weapon_slots := HBoxContainer.new()
-	weapon_slots.add_theme_constant_override("separation", 10)
-	weapon_panel.add_child(weapon_slots)
-	weapon_slot_buttons.clear()
-	for i in range(4):
-		var slot := _hud_icon_button(Vector2(80, 80))
-		weapon_slots.add_child(slot)
-		weapon_slot_buttons.append(slot)
-	var reserve_panel := PanelContainer.new()
-	reserve_panel.custom_minimum_size = Vector2(194, 90)
-	reserve_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.035, 0.027, 0.042, 0.72), Color("#c8a2ff"), 1, 6))
-	top.add_child(reserve_panel)
-	var reserve_slots := HBoxContainer.new()
-	reserve_slots.add_theme_constant_override("separation", 10)
-	reserve_panel.add_child(reserve_slots)
-	weapon_reserve_buttons.clear()
-	for i in range(GameState.weapon_reserve_capacity()):
-		var slot := _hud_icon_button(Vector2(80, 80))
-		reserve_slots.add_child(slot)
-		weapon_reserve_buttons.append(slot)
 	var stat_panel := PanelContainer.new()
-	stat_panel.anchor_left = 0.02
-	stat_panel.anchor_top = 0.84
-	stat_panel.anchor_right = 0.98
-	stat_panel.anchor_bottom = 0.96
+	stat_panel.anchor_left = 0.84
+	stat_panel.anchor_top = 0.16
+	stat_panel.anchor_right = 0.985
+	stat_panel.anchor_bottom = 0.965
 	stat_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.018, 0.032, 0.038, 0.76), Color("#5fe0c8"), 1, 6))
 	root.add_child(stat_panel)
-	var stat_slots := HBoxContainer.new()
-	stat_slots.add_theme_constant_override("separation", 9)
-	stat_panel.add_child(stat_slots)
-	stat_icon_buttons.clear()
+	var stat_box := VBoxContainer.new()
+	stat_box.add_theme_constant_override("separation", 6)
+	stat_panel.add_child(stat_box)
+	var stat_title := Label.new()
+	stat_title.text = "数值"
+	stat_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stat_title.add_theme_font_size_override("font_size", 18)
+	stat_title.add_theme_color_override("font_color", Color("#e8b259"))
+	stat_box.add_child(stat_title)
+	stat_rows.clear()
 	for def in HUD_STAT_DEFS:
-		var stat_button := _hud_icon_button(Vector2(52, 52))
-		stat_slots.add_child(stat_button)
-		stat_icon_buttons.append({"button": stat_button, "def": def})
+		var stat_entry := _stat_row_control(def)
+		stat_box.add_child(stat_entry["panel"])
+		stat_rows.append(stat_entry)
+	var weapon_panel := PanelContainer.new()
+	weapon_panel.anchor_left = 0.02
+	weapon_panel.anchor_top = 0.765
+	weapon_panel.anchor_right = 0.35
+	weapon_panel.anchor_bottom = 0.965
+	weapon_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.02, 0.04, 0.045, 0.72), Color("#5fe0c8"), 1, 6))
+	root.add_child(weapon_panel)
+	var weapon_box := VBoxContainer.new()
+	weapon_box.add_theme_constant_override("separation", 7)
+	weapon_panel.add_child(weapon_box)
+	var weapon_title := Label.new()
+	weapon_title.text = "装备"
+	weapon_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	weapon_title.add_theme_font_size_override("font_size", 18)
+	weapon_title.add_theme_color_override("font_color", Color("#e8b259"))
+	weapon_box.add_child(weapon_title)
+	var weapon_slots := HBoxContainer.new()
+	weapon_slots.add_theme_constant_override("separation", 10)
+	weapon_box.add_child(weapon_slots)
+	weapon_slot_buttons.clear()
+	for i in range(4):
+		var slot := _hud_icon_button(Vector2(62, 62))
+		weapon_slots.add_child(slot)
+		weapon_slot_buttons.append(slot)
+	var reserve_label := Label.new()
+	reserve_label.text = "备炼"
+	reserve_label.add_theme_font_size_override("font_size", 15)
+	reserve_label.add_theme_color_override("font_color", Color("#c8a2ff"))
+	weapon_slots.add_child(reserve_label)
+	var reserve_slots := HBoxContainer.new()
+	reserve_slots.add_theme_constant_override("separation", 8)
+	weapon_slots.add_child(reserve_slots)
+	weapon_reserve_buttons.clear()
+	for i in range(GameState.weapon_reserve_capacity()):
+		var slot := _hud_icon_button(Vector2(62, 62))
+		reserve_slots.add_child(slot)
+		weapon_reserve_buttons.append(slot)
+	var item_panel := PanelContainer.new()
+	item_panel.anchor_left = 0.365
+	item_panel.anchor_top = 0.825
+	item_panel.anchor_right = 0.74
+	item_panel.anchor_bottom = 0.965
+	item_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.035, 0.027, 0.042, 0.72), Color("#c8a2ff"), 1, 6))
+	root.add_child(item_panel)
+	var item_box := VBoxContainer.new()
+	item_box.add_theme_constant_override("separation", 7)
+	item_panel.add_child(item_box)
+	bag_title_label = Label.new()
+	bag_title_label.text = "道具"
+	bag_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bag_title_label.add_theme_font_size_override("font_size", 18)
+	bag_title_label.add_theme_color_override("font_color", Color("#e8b259"))
+	item_box.add_child(bag_title_label)
+	var item_slots := HBoxContainer.new()
+	item_slots.add_theme_constant_override("separation", 7)
+	item_box.add_child(item_slots)
+	item_slot_buttons.clear()
+	var max_bag_slots: int = int(max(int(GameState.stats.get("bag_capacity", 5)), int(GameState.stats.get("bag_capacity_max", 10))))
+	for i in range(max_bag_slots):
+		var slot := _hud_icon_button(Vector2(46, 46))
+		item_slots.add_child(slot)
+		item_slot_buttons.append(slot)
 	message_label = Label.new()
 	message_label.anchor_left = 0.27
 	message_label.anchor_top = 0.38
@@ -223,6 +269,37 @@ func _hud_icon_button(size: Vector2) -> Button:
 	b.add_theme_stylebox_override("pressed", _stylebox(Color(0.08, 0.1, 0.09, 0.98), Color("#e8b259"), 2, 5))
 	return b
 
+func _stat_row_control(def: Dictionary) -> Dictionary:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(0, 42)
+	panel.add_theme_stylebox_override("panel", _stylebox(Color(0.03, 0.055, 0.06, 0.74), Color(0.35, 0.88, 0.82, 0.28), 1, 5))
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 7)
+	panel.add_child(line)
+	var icon := TextureRect.new()
+	icon.custom_minimum_size = Vector2(30, 30)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.add_child(icon)
+	var label := Label.new()
+	label.text = str(def.get("label", ""))
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_color_override("font_color", Color("#cfe5e0"))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.add_child(label)
+	var value := Label.new()
+	value.custom_minimum_size = Vector2(72, 0)
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	value.add_theme_font_size_override("font_size", 15)
+	value.add_theme_color_override("font_color", Color("#eaf6ff"))
+	value.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.add_child(value)
+	return {"panel": panel, "icon": icon, "label": label, "value": value, "def": def}
+
 func _set_weapon_button_style(button: Button, tier: int, empty := false) -> void:
 	if empty:
 		button.add_theme_stylebox_override("normal", _stylebox(Color(0.03, 0.055, 0.06, 0.9), Color(0.35, 0.88, 0.82, 0.34), 1, 5))
@@ -233,6 +310,19 @@ func _set_weapon_button_style(button: Button, tier: int, empty := false) -> void
 	button.add_theme_stylebox_override("normal", _stylebox(Color(tier_color.r, tier_color.g, tier_color.b, 0.18), Color(tier_color.r, tier_color.g, tier_color.b, 0.74), 2, 5))
 	button.add_theme_stylebox_override("hover", _stylebox(Color(tier_color.r, tier_color.g, tier_color.b, 0.28), Color("#fff4b8"), 2, 5))
 	button.add_theme_stylebox_override("pressed", _stylebox(Color(tier_color.r, tier_color.g, tier_color.b, 0.34), Color("#e8b259"), 2, 5))
+
+func _set_item_button_style(button: Button, item: Dictionary, empty := false) -> void:
+	if empty:
+		button.add_theme_stylebox_override("normal", _stylebox(Color(0.035, 0.027, 0.042, 0.78), Color(0.78, 0.64, 1.0, 0.26), 1, 5))
+		button.add_theme_stylebox_override("hover", _stylebox(Color(0.05, 0.04, 0.065, 0.92), Color("#e8b259"), 2, 5))
+		button.add_theme_stylebox_override("pressed", _stylebox(Color(0.07, 0.055, 0.08, 0.95), Color("#e8b259"), 2, 5))
+		return
+	var element_value = item.get("element", null)
+	var element := "" if element_value == null else str(element_value)
+	var item_color := _element_color(element)
+	button.add_theme_stylebox_override("normal", _stylebox(Color(item_color.r, item_color.g, item_color.b, 0.16), Color(item_color.r, item_color.g, item_color.b, 0.62), 2, 5))
+	button.add_theme_stylebox_override("hover", _stylebox(Color(item_color.r, item_color.g, item_color.b, 0.25), Color("#fff4b8"), 2, 5))
+	button.add_theme_stylebox_override("pressed", _stylebox(Color(item_color.r, item_color.g, item_color.b, 0.32), Color("#e8b259"), 2, 5))
 
 func _stylebox(bg: Color, border: Color, border_width: int, radius: int) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
@@ -1319,11 +1409,31 @@ func _update_hud() -> void:
 			slot.icon = AssetDB.tex("pickup_qi")
 			slot.tooltip_text = "空备炼栏"
 			_set_weapon_button_style(slot, 1, true)
-	for entry in stat_icon_buttons:
-		var button: Button = entry["button"]
+	var bag_capacity := int(GameState.stats.get("bag_capacity", 5))
+	var used_slots := _bag_used_slots()
+	bag_title_label.text = "道具 %d/%d" % [used_slots, bag_capacity]
+	for i in range(item_slot_buttons.size()):
+		var slot: Button = item_slot_buttons[i]
+		slot.visible = i < bag_capacity
+		if not slot.visible:
+			continue
+		if i < GameState.bag.size():
+			var item: Dictionary = GameState.bag[i]
+			slot.icon = AssetDB.tex(_offer_art_id(str(item.get("id", ""))))
+			slot.tooltip_text = _item_tooltip(i, item)
+			_set_item_button_style(slot, item)
+		else:
+			slot.icon = AssetDB.tex("pickup_stone")
+			slot.tooltip_text = "空道具格"
+			_set_item_button_style(slot, {}, true)
+	for entry in stat_rows:
+		var panel: PanelContainer = entry["panel"]
+		var icon: TextureRect = entry["icon"]
+		var value: Label = entry["value"]
 		var def: Dictionary = entry["def"]
-		button.icon = AssetDB.tex(str(def["icon"]))
-		button.tooltip_text = _stat_tooltip(def)
+		icon.texture = AssetDB.tex(str(def["icon"]))
+		value.text = _hud_stat_value(def)
+		panel.tooltip_text = _stat_tooltip(def)
 
 func _weapon_tooltip(index: int, weapon: Dictionary, reserve := false) -> String:
 	var element := str(weapon.get("element", ""))
@@ -1337,6 +1447,38 @@ func _weapon_tooltip(index: int, weapon: Dictionary, reserve := false) -> String
 		var row := _on_hit_row(effect, element)
 		lines.append("%s %s" % [row.get("label", ""), row.get("value", "")])
 	return "\n".join(lines)
+
+func _bag_used_slots() -> int:
+	var used := 0
+	for item in GameState.bag:
+		used += int(item.get("slots", 1))
+	return used
+
+func _item_tooltip(index: int, item: Dictionary) -> String:
+	var element_value = item.get("element", null)
+	var element := "" if element_value == null else str(element_value)
+	var school := "通用" if element == "" else GameState.root_name(element)
+	var lines := [
+		"%d. %s" % [index + 1, str(item.get("name", ""))],
+		"法宝 · %s · 占%d格" % [school, int(item.get("slots", 1))]
+	]
+	var summary := str(item.get("summary", ""))
+	if not summary.is_empty():
+		lines.append(summary)
+	for key in item.get("effects", {}).keys():
+		var row := _stat_effect_row(str(key), item["effects"][key], false)
+		lines.append("%s %s" % [row.get("label", ""), row.get("value", "")])
+	for key in item.get("cost_effects", {}).keys():
+		var row := _stat_effect_row(str(key), item["cost_effects"][key], true)
+		lines.append("%s %s" % [row.get("label", ""), row.get("value", "")])
+	return "\n".join(lines)
+
+func _hud_stat_value(def: Dictionary) -> String:
+	var key := str(def["key"])
+	var current = GameState.stats.get(key, 0.0)
+	if key == "speed_pct":
+		return "%.0f%%" % ((1.0 + float(current)) * 100.0)
+	return _effect_value_text(key, current)
 
 func _stat_tooltip(def: Dictionary) -> String:
 	var key := str(def["key"])
