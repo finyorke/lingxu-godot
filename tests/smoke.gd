@@ -23,6 +23,7 @@ func _init() -> void:
 		"res://assets/enemies/sword_demon.png",
 		"res://assets/weapons/weapon_icons.png",
 		"res://assets/ui/offer_icons.png",
+		"res://assets/ui/hud_ornate_plate.png",
 		"res://assets/ui/offer_stat_attack_speed.png",
 		"res://assets/fx/combat_fx.png",
 		"res://assets/fonts/NotoSansCJKsc-Regular.otf",
@@ -36,9 +37,12 @@ func _init() -> void:
 	var asset_db = load("res://Scripts/autoload/AssetDB.gd").new()
 	root.add_child(asset_db)
 	asset_db.load_manifest()
-	for id in ["offer_guanri_sword", "offer_hantan_sword", "offer_turtle_charm", "offer_stat_attack_speed", "offer_blood_return"]:
+	for id in ["hud_ornate_plate", "offer_guanri_sword", "offer_hantan_sword", "offer_turtle_charm", "offer_stat_attack_speed", "offer_blood_return"]:
 		if not asset_db.manifest.has(id):
-			failures.append("missing market offer icon manifest entry %s" % id)
+			failures.append("missing asset manifest entry %s" % id)
+	var hud_plate_tex: Texture2D = asset_db.tex("hud_ornate_plate")
+	if hud_plate_tex == null or hud_plate_tex.get_width() < 1024 or hud_plate_tex.get_height() < 360:
+		failures.append("hud_ornate_plate texture did not load as a high-resolution HUD plate")
 	var attack_speed_info: Dictionary = asset_db.manifest.get("offer_stat_attack_speed", {})
 	if str(attack_speed_info.get("path", "")) != "res://assets/ui/offer_stat_attack_speed.png":
 		failures.append("offer_stat_attack_speed must use a standalone icon, not the offer atlas")

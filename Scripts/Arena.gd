@@ -6,6 +6,7 @@ const PLAYER_SCENE := preload("res://Scenes/Player/Player.tscn")
 const ENEMY_SCENE := preload("res://Scenes/Enemies/Enemy.tscn")
 const PROJECTILE_SCENE := preload("res://Scenes/Weapon/Projectile.tscn")
 const DISPLAY_FONT := preload("res://assets/fonts/MaShanZheng-Regular.ttf")
+const BODY_FONT := preload("res://assets/fonts/NotoSansCJKsc-Regular.otf")
 const HUD_STAT_DEFS := [
 	{"key": "damage_pct", "label": "全伤", "icon": "fx_crit"},
 	{"key": "metal_damage_pct", "label": "金伤", "icon": "icon_metal"},
@@ -46,12 +47,17 @@ var overlay_layer: CanvasLayer
 var hp_bar: ProgressBar
 var shield_bar: ProgressBar
 var xp_bar: ProgressBar
-var info_label: Label
 var stats_label: Label
 var weapon_label: Label
 var hp_value_label: Label
 var shield_value_label: Label
 var xp_value_label: Label
+var time_value_label: Label
+var realm_value_label: Label
+var kills_value_label: Label
+var stones_value_label: Label
+var burst_value_label: Label
+var roots_value_label: Label
 var weapon_slot_buttons: Array = []
 var weapon_reserve_buttons: Array = []
 var stat_icon_buttons: Array = []
@@ -111,28 +117,68 @@ func _setup_hud() -> void:
 	top.anchor_left = 0.02
 	top.anchor_top = 0.02
 	top.anchor_right = 0.98
-	top.anchor_bottom = 0.13
-	top.add_theme_constant_override("separation", 16)
+	top.anchor_bottom = 0.23
+	top.add_theme_constant_override("separation", 14)
 	root.add_child(top)
+
+	var vitals := Control.new()
+	vitals.custom_minimum_size = Vector2(650, 150)
+	top.add_child(vitals)
+
+	var plate := TextureRect.new()
+	plate.texture = AssetDB.tex("hud_ornate_plate")
+	plate.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	plate.stretch_mode = TextureRect.STRETCH_SCALE
+	plate.modulate = Color(1, 1, 1, 0.34)
+	plate.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vitals.add_child(plate)
+
+	var vitals_panel := PanelContainer.new()
+	vitals_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vitals_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.012, 0.024, 0.028, 0.74), Color(0.54, 0.94, 0.86, 0.42), 1, 8))
+	vitals.add_child(vitals_panel)
+
+	var vitals_margin := MarginContainer.new()
+	vitals_margin.add_theme_constant_override("margin_left", 22)
+	vitals_margin.add_theme_constant_override("margin_right", 22)
+	vitals_margin.add_theme_constant_override("margin_top", 16)
+	vitals_margin.add_theme_constant_override("margin_bottom", 14)
+	vitals_panel.add_child(vitals_margin)
+
+	var vitals_row := HBoxContainer.new()
+	vitals_row.add_theme_constant_override("separation", 12)
+	vitals_margin.add_child(vitals_row)
+
 	var bars := VBoxContainer.new()
-	bars.custom_minimum_size = Vector2(520, 92)
-	top.add_child(bars)
-	hp_bar = _bar(Color("#f25050"))
-	shield_bar = _bar(Color("#5aa9e0"))
-	xp_bar = _bar(Color("#5fe0c8"))
+	bars.custom_minimum_size = Vector2(360, 112)
+	bars.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bars.add_theme_constant_override("separation", 6)
+	vitals_row.add_child(bars)
+	hp_bar = _bar(Color("#f05c63"), 30)
+	shield_bar = _bar(Color("#5aa9e0"), 26)
+	xp_bar = _bar(Color("#5fe0c8"), 24)
 	bars.add_child(hp_bar)
 	hp_value_label = _bar_value_label(hp_bar)
 	bars.add_child(shield_bar)
 	shield_value_label = _bar_value_label(shield_bar)
 	bars.add_child(xp_bar)
 	xp_value_label = _bar_value_label(xp_bar)
-	info_label = Label.new()
-	info_label.custom_minimum_size = Vector2(460, 90)
-	info_label.add_theme_font_size_override("font_size", 25)
-	info_label.add_theme_color_override("font_color", Color("#eaf6ff"))
-	top.add_child(info_label)
+
+	var metrics := GridContainer.new()
+	metrics.columns = 2
+	metrics.custom_minimum_size = Vector2(228, 112)
+	metrics.add_theme_constant_override("h_separation", 6)
+	metrics.add_theme_constant_override("v_separation", 6)
+	vitals_row.add_child(metrics)
+	time_value_label = _hud_metric(metrics, "历时", Color("#d8f6ef"))
+	realm_value_label = _hud_metric(metrics, "境界", Color("#e8b259"))
+	kills_value_label = _hud_metric(metrics, "斩妖", Color("#f4ecd8"))
+	stones_value_label = _hud_metric(metrics, "灵石", Color("#e8b259"))
+	burst_value_label = _hud_metric(metrics, "聚剑", Color("#5fe0c8"))
+	roots_value_label = _hud_metric(metrics, "灵根", Color("#d8f6ef"))
+
 	var weapon_panel := PanelContainer.new()
-	weapon_panel.custom_minimum_size = Vector2(370, 90)
+	weapon_panel.custom_minimum_size = Vector2(340, 98)
 	weapon_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.02, 0.04, 0.045, 0.72), Color("#5fe0c8"), 1, 6))
 	top.add_child(weapon_panel)
 	var weapon_slots := HBoxContainer.new()
@@ -140,11 +186,11 @@ func _setup_hud() -> void:
 	weapon_panel.add_child(weapon_slots)
 	weapon_slot_buttons.clear()
 	for i in range(4):
-		var slot := _hud_icon_button(Vector2(80, 80))
+		var slot := _hud_icon_button(Vector2(72, 72))
 		weapon_slots.add_child(slot)
 		weapon_slot_buttons.append(slot)
 	var reserve_panel := PanelContainer.new()
-	reserve_panel.custom_minimum_size = Vector2(194, 90)
+	reserve_panel.custom_minimum_size = Vector2(178, 98)
 	reserve_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.035, 0.027, 0.042, 0.72), Color("#c8a2ff"), 1, 6))
 	top.add_child(reserve_panel)
 	var reserve_slots := HBoxContainer.new()
@@ -152,7 +198,7 @@ func _setup_hud() -> void:
 	reserve_panel.add_child(reserve_slots)
 	weapon_reserve_buttons.clear()
 	for i in range(GameState.weapon_reserve_capacity()):
-		var slot := _hud_icon_button(Vector2(80, 80))
+		var slot := _hud_icon_button(Vector2(72, 72))
 		reserve_slots.add_child(slot)
 		weapon_reserve_buttons.append(slot)
 	var stat_panel := PanelContainer.new()
@@ -181,18 +227,30 @@ func _setup_hud() -> void:
 	overlay_layer = CanvasLayer.new()
 	add_child(overlay_layer)
 
-func _bar(color: Color) -> ProgressBar:
+func _bar(color: Color, height := 26) -> ProgressBar:
 	var b := ProgressBar.new()
-	b.custom_minimum_size = Vector2(500, 24)
+	b.custom_minimum_size = Vector2(360, height)
 	b.show_percentage = false
 	var fill := StyleBoxFlat.new()
 	fill.bg_color = color
-	fill.corner_radius_top_left = 3
-	fill.corner_radius_bottom_left = 3
+	fill.border_color = color.lightened(0.28)
+	fill.set_border_width_all(1)
+	fill.corner_radius_top_left = 6
+	fill.corner_radius_top_right = 6
+	fill.corner_radius_bottom_left = 6
+	fill.corner_radius_bottom_right = 6
 	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.02, 0.04, 0.04, 0.74)
-	bg.border_color = Color("#5fe0c8")
+	bg.bg_color = Color(0.01, 0.022, 0.025, 0.88)
+	bg.border_color = Color(color.r, color.g, color.b, 0.52)
 	bg.set_border_width_all(1)
+	bg.corner_radius_top_left = 6
+	bg.corner_radius_top_right = 6
+	bg.corner_radius_bottom_left = 6
+	bg.corner_radius_bottom_right = 6
+	bg.content_margin_left = 3
+	bg.content_margin_right = 3
+	bg.content_margin_top = 3
+	bg.content_margin_bottom = 3
 	b.add_theme_stylebox_override("fill", fill)
 	b.add_theme_stylebox_override("background", bg)
 	return b
@@ -202,11 +260,43 @@ func _bar_value_label(bar: ProgressBar) -> Label:
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 14)
-	label.add_theme_color_override("font_color", Color("#fff8e8"))
+	_apply_body_font(label, 15, Color("#fff8e8"))
+	label.add_theme_constant_override("outline_size", 2)
+	label.add_theme_color_override("font_outline_color", Color(0.02, 0.025, 0.022, 0.9))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(label)
 	return label
+
+func _hud_metric(parent: Container, caption: String, accent: Color) -> Label:
+	var cell := PanelContainer.new()
+	cell.custom_minimum_size = Vector2(108, 34)
+	var cell_style := _stylebox(Color(0.012, 0.03, 0.032, 0.78).lerp(accent, 0.08), Color(accent.r, accent.g, accent.b, 0.36), 1, 5)
+	cell_style.content_margin_left = 5
+	cell_style.content_margin_right = 5
+	cell_style.content_margin_top = 2
+	cell_style.content_margin_bottom = 2
+	cell.add_theme_stylebox_override("panel", cell_style)
+	parent.add_child(cell)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 0)
+	cell.add_child(box)
+
+	var title := Label.new()
+	title.text = caption
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_apply_body_font(title, 10, Color(accent.r, accent.g, accent.b, 0.72))
+	box.add_child(title)
+
+	var value := Label.new()
+	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	value.clip_text = true
+	_apply_body_font(value, 15, accent.lightened(0.16))
+	value.add_theme_constant_override("outline_size", 1)
+	value.add_theme_color_override("font_outline_color", Color(0.01, 0.018, 0.018, 0.88))
+	box.add_child(value)
+	return value
 
 func _hud_icon_button(size: Vector2) -> Button:
 	var b := Button.new()
@@ -256,6 +346,11 @@ func _apply_display_font(control: Control, size: int, color: Color, outline_size
 	if outline_size > 0:
 		control.add_theme_constant_override("outline_size", outline_size)
 		control.add_theme_color_override("font_outline_color", Color(0.02, 0.035, 0.032, 0.92))
+
+func _apply_body_font(control: Control, size: int, color: Color) -> void:
+	control.add_theme_font_override("font", BODY_FONT)
+	control.add_theme_font_size_override("font_size", size)
+	control.add_theme_color_override("font_color", color)
 
 func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("pause") and not market_open:
@@ -1139,22 +1234,18 @@ func _update_hud() -> void:
 	shield_bar.value = player.shield
 	xp_bar.max_value = GameState.xp_to_next
 	xp_bar.value = GameState.xp
-	hp_value_label.text = "气血 %.0f / %.0f" % [player.hp, float(GameState.stats.get("max_hp", 110))]
-	shield_value_label.text = "护盾 %.0f / %.0f" % [player.shield, float(GameState.stats.get("max_qi_shield", 60))]
-	xp_value_label.text = "Lv.%d  灵气 %.0f / %.0f" % [GameState.level, GameState.xp, GameState.xp_to_next]
+	hp_value_label.text = "气血  %.0f / %.0f" % [player.hp, float(GameState.stats.get("max_hp", 110))]
+	shield_value_label.text = "护盾  %.0f / %.0f" % [player.shield, float(GameState.stats.get("max_qi_shield", 60))]
+	xp_value_label.text = "灵气  %.0f / %.0f" % [GameState.xp, GameState.xp_to_next]
 	var roots := []
 	for e in GameState.active_roots:
 		roots.append(GameState.root_name(e))
-	info_label.text = "%02d:%02d  %s Lv.%d\n斩妖 %d  灵石 %d  聚剑 %.1fs\n灵根 %s" % [
-		int(GameState.run_time / 60.0),
-		int(GameState.run_time) % 60,
-		GameState.realm_name,
-		GameState.level,
-		GameState.kills,
-		GameState.stones,
-		burst_cd,
-		"".join(roots)
-	]
+	time_value_label.text = "%02d:%02d" % [int(GameState.run_time / 60.0), int(GameState.run_time) % 60]
+	realm_value_label.text = "%s Lv.%d" % [GameState.realm_name, GameState.level]
+	kills_value_label.text = "%d" % GameState.kills
+	stones_value_label.text = "%d" % GameState.stones
+	burst_value_label.text = "%.1fs" % burst_cd
+	roots_value_label.text = "".join(roots)
 	for i in range(weapon_slot_buttons.size()):
 		var slot: Button = weapon_slot_buttons[i]
 		if i < GameState.active_weapons.size():
