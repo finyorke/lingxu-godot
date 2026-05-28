@@ -22,8 +22,17 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 
+	var top_panel: Control = _find_node(arena, "HudTopPanel")
 	var stat_panel: Control = _find_node(arena, "HudStatPanel")
 	var weapon_panel: Control = _find_node(arena, "HudWeaponPanel")
+	if top_panel == null:
+		failures.append("HudTopPanel was not found")
+	else:
+		_check_max_size(top_panel, Vector2(860, 200), "top HUD panel", failures)
+		if top_panel.find_children("*", "ProgressBar", true, false).size() != 3:
+			failures.append("top HUD panel should keep three styled progress bars")
+		if top_panel.find_children("*", "PanelContainer", true, false).size() < 6:
+			failures.append("top HUD panel should split run info into compact info cells")
 	if stat_panel == null:
 		failures.append("HudStatPanel was not found")
 	else:
@@ -47,7 +56,7 @@ func _run() -> void:
 			failures.append("market stat panel should show the full icon-row stat list")
 
 	if failures.is_empty():
-		print("HUD LAYOUT OK: stat and weapon panels remain compact.")
+		print("HUD LAYOUT OK: top, stat, and weapon panels remain compact.")
 		quit(0)
 	else:
 		for failure in failures:

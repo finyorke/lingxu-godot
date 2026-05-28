@@ -55,7 +55,6 @@ var detail_layer: CanvasLayer
 var hp_bar: ProgressBar
 var shield_bar: ProgressBar
 var xp_bar: ProgressBar
-var info_label: Label
 var stats_label: Label
 var weapon_label: Label
 var hp_value_label: Label
@@ -67,6 +66,7 @@ var weapon_slot_buttons: Array = []
 var weapon_reserve_buttons: Array = []
 var item_slot_buttons: Array = []
 var stat_rows: Array = []
+var hud_info_entries: Dictionary = {}
 var message_label: Label
 var market_notice_label: Label
 var market_mode := "choice"
@@ -130,16 +130,37 @@ func _setup_hud() -> void:
 	var root := Control.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	hud_layer.add_child(root)
-	var top := HBoxContainer.new()
-	top.anchor_left = 0.02
-	top.anchor_top = 0.02
-	top.anchor_right = 0.98
-	top.anchor_bottom = 0.13
-	top.add_theme_constant_override("separation", 16)
+	var top := Control.new()
+	top.name = "HudTopPanel"
+	top.anchor_left = 0.018
+	top.anchor_top = 0.012
+	top.anchor_right = 0.018
+	top.anchor_bottom = 0.012
+	top.offset_right = 840
+	top.offset_bottom = 190
 	root.add_child(top)
+	var top_backplate := TextureRect.new()
+	top_backplate.texture = AssetDB.tex("hud_ornate_plate")
+	top_backplate.set_anchors_preset(Control.PRESET_FULL_RECT)
+	top_backplate.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	top_backplate.stretch_mode = TextureRect.STRETCH_SCALE
+	top_backplate.modulate = Color(1, 1, 1, 0.94)
+	top_backplate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(top_backplate)
+	var top_margin := MarginContainer.new()
+	top_margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	top_margin.add_theme_constant_override("margin_left", 48)
+	top_margin.add_theme_constant_override("margin_right", 46)
+	top_margin.add_theme_constant_override("margin_top", 42)
+	top_margin.add_theme_constant_override("margin_bottom", 32)
+	top.add_child(top_margin)
+	var top_content := HBoxContainer.new()
+	top_content.add_theme_constant_override("separation", 12)
+	top_margin.add_child(top_content)
 	var bars := VBoxContainer.new()
-	bars.custom_minimum_size = Vector2(520, 92)
-	top.add_child(bars)
+	bars.custom_minimum_size = Vector2(365, 98)
+	bars.add_theme_constant_override("separation", 7)
+	top_content.add_child(bars)
 	hp_bar = _bar(Color("#f25050"))
 	shield_bar = _bar(Color("#5aa9e0"))
 	xp_bar = _bar(Color("#5fe0c8"))
@@ -149,11 +170,24 @@ func _setup_hud() -> void:
 	shield_value_label = _bar_value_label(shield_bar)
 	bars.add_child(xp_bar)
 	xp_value_label = _bar_value_label(xp_bar)
-	info_label = Label.new()
-	info_label.custom_minimum_size = Vector2(460, 90)
-	info_label.add_theme_font_size_override("font_size", 25)
-	info_label.add_theme_color_override("font_color", Color("#eaf6ff"))
-	top.add_child(info_label)
+	var info_grid := GridContainer.new()
+	info_grid.columns = 3
+	info_grid.custom_minimum_size = Vector2(330, 96)
+	info_grid.add_theme_constant_override("h_separation", 6)
+	info_grid.add_theme_constant_override("v_separation", 6)
+	top_content.add_child(info_grid)
+	hud_info_entries.clear()
+	for def in [
+		{"key": "time", "label": "历时", "icon": "pickup_qi"},
+		{"key": "realm", "label": "境界", "icon": "fx_ascend"},
+		{"key": "kills", "label": "斩妖", "icon": "fx_slash"},
+		{"key": "stones", "label": "灵石", "icon": "pickup_stone"},
+		{"key": "burst", "label": "聚剑", "icon": "icon_banner"},
+		{"key": "roots", "label": "灵根", "icon": "icon_metal"}
+	]:
+		var entry := _hud_info_cell(def)
+		info_grid.add_child(entry["panel"])
+		hud_info_entries[str(def["key"])] = entry
 	var stat_panel := PanelContainer.new()
 	stat_panel.name = "HudStatPanel"
 	stat_panel.anchor_left = 1.0
@@ -279,16 +313,28 @@ func _setup_hud() -> void:
 
 func _bar(color: Color) -> ProgressBar:
 	var b := ProgressBar.new()
-	b.custom_minimum_size = Vector2(500, 24)
+	b.custom_minimum_size = Vector2(365, 28)
 	b.show_percentage = false
 	var fill := StyleBoxFlat.new()
 	fill.bg_color = color
-	fill.corner_radius_top_left = 3
-	fill.corner_radius_bottom_left = 3
+	fill.border_color = Color(1, 1, 1, 0.18)
+	fill.set_border_width_all(1)
+	fill.corner_radius_top_left = 9
+	fill.corner_radius_top_right = 9
+	fill.corner_radius_bottom_left = 9
+	fill.corner_radius_bottom_right = 9
 	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0.02, 0.04, 0.04, 0.74)
-	bg.border_color = Color("#5fe0c8")
-	bg.set_border_width_all(1)
+	bg.bg_color = Color(0.006, 0.018, 0.02, 0.88)
+	bg.border_color = Color("#d8b26c")
+	bg.set_border_width_all(2)
+	bg.corner_radius_top_left = 10
+	bg.corner_radius_top_right = 10
+	bg.corner_radius_bottom_left = 10
+	bg.corner_radius_bottom_right = 10
+	bg.content_margin_left = 4
+	bg.content_margin_right = 4
+	bg.content_margin_top = 3
+	bg.content_margin_bottom = 3
 	b.add_theme_stylebox_override("fill", fill)
 	b.add_theme_stylebox_override("background", bg)
 	return b
@@ -298,11 +344,54 @@ func _bar_value_label(bar: ProgressBar) -> Label:
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_font_size_override("font_size", 13)
 	label.add_theme_color_override("font_color", Color("#fff8e8"))
+	label.add_theme_constant_override("outline_size", 2)
+	label.add_theme_color_override("font_outline_color", Color(0.02, 0.026, 0.02, 0.9))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.add_child(label)
 	return label
+
+func _hud_info_cell(def: Dictionary) -> Dictionary:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(104, 43)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.018, 0.035, 0.038, 0.72), Color(0.85, 0.68, 0.38, 0.36), 1, 6, 5, 3))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	panel.add_child(row)
+	var icon := TextureRect.new()
+	icon.texture = AssetDB.tex(str(def.get("icon", "")))
+	icon.custom_minimum_size = Vector2(18, 18)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(icon)
+	var text_box := VBoxContainer.new()
+	text_box.add_theme_constant_override("separation", 0)
+	text_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(text_box)
+	var label := Label.new()
+	label.text = str(def.get("label", ""))
+	label.add_theme_font_size_override("font_size", 10)
+	label.add_theme_color_override("font_color", Color("#d8b26c"))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	text_box.add_child(label)
+	var value := Label.new()
+	value.text = "-"
+	value.clip_text = true
+	value.add_theme_font_size_override("font_size", 13)
+	value.add_theme_color_override("font_color", Color("#f5fbff"))
+	value.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	text_box.add_child(value)
+	return {"panel": panel, "icon": icon, "label": label, "value": value}
+
+func _set_hud_info_value(key: String, value_text: String) -> void:
+	if not hud_info_entries.has(key):
+		return
+	var entry: Dictionary = hud_info_entries[key]
+	var value_label: Label = entry["value"]
+	value_label.text = value_text
 
 func _hud_icon_button(size: Vector2) -> Button:
 	var b := Button.new()
@@ -2626,16 +2715,15 @@ func _update_hud() -> void:
 	var roots := []
 	for e in GameState.active_roots:
 		roots.append(GameState.root_name(e))
-	info_label.text = "%02d:%02d  %s Lv.%d\n斩妖 %d  灵石 %d  聚剑 %.1fs\n灵根 %s" % [
+	_set_hud_info_value("time", "%02d:%02d" % [
 		int(GameState.run_time / 60.0),
-		int(GameState.run_time) % 60,
-		GameState.realm_name,
-		GameState.level,
-		GameState.kills,
-		GameState.stones,
-		burst_cd,
-		"".join(roots)
-	]
+		int(GameState.run_time) % 60
+	])
+	_set_hud_info_value("realm", "%s Lv.%d" % [GameState.realm_name, GameState.level])
+	_set_hud_info_value("kills", "%d" % GameState.kills)
+	_set_hud_info_value("stones", "%d" % GameState.stones)
+	_set_hud_info_value("burst", "%.1fs" % burst_cd)
+	_set_hud_info_value("roots", "".join(roots))
 	for i in range(weapon_slot_buttons.size()):
 		var slot: Button = weapon_slot_buttons[i]
 		if i < GameState.active_weapons.size():
