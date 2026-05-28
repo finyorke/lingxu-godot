@@ -5,6 +5,7 @@ signal run_ended(result)
 const PLAYER_SCENE := preload("res://Scenes/Player/Player.tscn")
 const ENEMY_SCENE := preload("res://Scenes/Enemies/Enemy.tscn")
 const PROJECTILE_SCENE := preload("res://Scenes/Weapon/Projectile.tscn")
+const DISPLAY_FONT := preload("res://assets/fonts/MaShanZheng-Regular.ttf")
 const HUD_STAT_DEFS := [
 	{"key": "damage_pct", "label": "全伤", "icon": "fx_crit"},
 	{"key": "metal_damage_pct", "label": "金伤", "icon": "icon_metal"},
@@ -162,8 +163,7 @@ func _setup_hud() -> void:
 	message_label.anchor_right = 0.73
 	message_label.anchor_bottom = 0.48
 	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	message_label.add_theme_font_size_override("font_size", 44)
-	message_label.add_theme_color_override("font_color", Color("#e8b259"))
+	_apply_display_font(message_label, 54, Color("#e8b259"), 3)
 	root.add_child(message_label)
 	overlay_layer = CanvasLayer.new()
 	add_child(overlay_layer)
@@ -220,7 +220,18 @@ func _stylebox(bg: Color, border: Color, border_width: int, radius: int) -> Styl
 	box.content_margin_right = 8
 	box.content_margin_top = 6
 	box.content_margin_bottom = 6
+	box.shadow_color = Color(0, 0, 0, 0.3)
+	box.shadow_size = 7
+	box.shadow_offset = Vector2(0, 2)
 	return box
+
+func _apply_display_font(control: Control, size: int, color: Color, outline_size := 0) -> void:
+	control.add_theme_font_override("font", DISPLAY_FONT)
+	control.add_theme_font_size_override("font_size", size)
+	control.add_theme_color_override("font_color", color)
+	if outline_size > 0:
+		control.add_theme_constant_override("outline_size", outline_size)
+		control.add_theme_color_override("font_outline_color", Color(0.02, 0.035, 0.032, 0.92))
 
 func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("pause") and not market_open:
@@ -600,17 +611,25 @@ func _open_market(reason: String) -> void:
 	root.color = Color(0.02, 0.03, 0.03, 0.82)
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay_layer.add_child(root)
+	var frame := PanelContainer.new()
+	frame.anchor_left = 0.06
+	frame.anchor_top = 0.07
+	frame.anchor_right = 0.94
+	frame.anchor_bottom = 0.93
+	frame.add_theme_stylebox_override("panel", _stylebox(Color(0.012, 0.024, 0.028, 0.92), Color("#e8b259"), 2, 8))
+	root.add_child(frame)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 24)
+	margin.add_theme_constant_override("margin_right", 24)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_bottom", 20)
+	frame.add_child(margin)
 	var box := VBoxContainer.new()
-	box.anchor_left = 0.08
-	box.anchor_top = 0.09
-	box.anchor_right = 0.92
-	box.anchor_bottom = 0.91
 	box.add_theme_constant_override("separation", 16)
-	root.add_child(box)
+	margin.add_child(box)
 	var title := Label.new()
 	title.text = "%s · 四选一" % reason
-	title.add_theme_font_size_override("font_size", 44)
-	title.add_theme_color_override("font_color", Color("#e8b259"))
+	_apply_display_font(title, 54, Color("#e8b259"), 3)
 	box.add_child(title)
 	var cards := HBoxContainer.new()
 	cards.add_theme_constant_override("separation", 14)
@@ -679,8 +698,7 @@ func _offer_button(offer: Dictionary) -> Button:
 	var name := Label.new()
 	name.text = str(offer["name"])
 	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name.add_theme_font_size_override("font_size", 25)
-	name.add_theme_color_override("font_color", Color("#fff8e8"))
+	_apply_display_font(name, 31, Color("#fff8e8"), 2)
 	name.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(name)
 	var kind := Label.new()

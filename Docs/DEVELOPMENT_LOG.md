@@ -16,3 +16,4 @@
 - 移除未加载的空壳 `Scenes/MainMenu.tscn` 与 `Scenes/RootChoice.tscn`，入口 UI 继续由 `Scripts/Main.gd` 程序化生成。
 - 修正 `market_offered` 信号参数为四选一卡牌数据数组；投射物速度读取 `proj_speed`，未配置时默认 560。
 - GitHub Pages 首次部署提醒：仓库 Pages 若未自动创建，需要在 Settings -> Pages 中把 Source 设为 GitHub Actions 后重跑 main 的 deploy job。
+- 精修主菜单、灵根抉择、结算与机缘 UI：新增随 Web 打包的书法标题字体，灵根卡牌显示五行图标、封印状态、元素边框/光晕，确认入墟按钮与各类面板改为符箓感描边、阴影和高对比排版。

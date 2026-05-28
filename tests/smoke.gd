@@ -24,7 +24,8 @@ func _init() -> void:
 		"res://assets/weapons/weapon_icons.png",
 		"res://assets/ui/offer_icons.png",
 		"res://assets/fx/combat_fx.png",
-		"res://assets/fonts/NotoSansCJKsc-Regular.otf"
+		"res://assets/fonts/NotoSansCJKsc-Regular.otf",
+		"res://assets/fonts/MaShanZheng-Regular.ttf"
 	]
 	for path in required_assets:
 		if not FileAccess.file_exists(path):
