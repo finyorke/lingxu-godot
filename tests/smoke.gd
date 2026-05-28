@@ -22,8 +22,12 @@ func _init() -> void:
 		"res://assets/enemies/serpent_boss.png",
 		"res://assets/enemies/sword_demon.png",
 		"res://assets/weapons/weapon_icons.png",
+		"res://assets/weapons/icon_wood.png",
 		"res://assets/ui/offer_icons.png",
 		"res://assets/ui/offer_stat_attack_speed.png",
+		"res://assets/ui/offer_stat_engineering.png",
+		"res://assets/ui/offer_stat_range.png",
+		"res://assets/ui/offer_stat_spell_power.png",
 		"res://assets/fx/combat_fx.png",
 		"res://assets/fonts/NotoSansCJKsc-Regular.otf",
 		"res://assets/fonts/MaShanZheng-Regular.ttf"
@@ -39,12 +43,23 @@ func _init() -> void:
 	for id in ["offer_guanri_sword", "offer_hantan_sword", "offer_turtle_charm", "offer_stat_attack_speed", "offer_blood_return"]:
 		if not asset_db.manifest.has(id):
 			failures.append("missing market offer icon manifest entry %s" % id)
-	var attack_speed_info: Dictionary = asset_db.manifest.get("offer_stat_attack_speed", {})
-	if str(attack_speed_info.get("path", "")) != "res://assets/ui/offer_stat_attack_speed.png":
-		failures.append("offer_stat_attack_speed must use a standalone icon, not the offer atlas")
-	var attack_speed_tex: Texture2D = asset_db.tex("offer_stat_attack_speed")
-	if attack_speed_tex == null or attack_speed_tex.get_width() < 512 or attack_speed_tex.get_height() < 512:
-		failures.append("offer_stat_attack_speed texture did not load as a full standalone icon")
+	var standalone_icons := {
+		"icon_wood": {"path": "res://assets/weapons/icon_wood.png", "min_width": 300, "min_height": 500},
+		"offer_stat_spell_power": {"path": "res://assets/ui/offer_stat_spell_power.png", "min_width": 128, "min_height": 128},
+		"offer_stat_engineering": {"path": "res://assets/ui/offer_stat_engineering.png", "min_width": 128, "min_height": 128},
+		"offer_stat_range": {"path": "res://assets/ui/offer_stat_range.png", "min_width": 128, "min_height": 128},
+		"offer_stat_attack_speed": {"path": "res://assets/ui/offer_stat_attack_speed.png", "min_width": 512, "min_height": 512},
+	}
+	for id in standalone_icons:
+		var expected: Dictionary = standalone_icons[id]
+		var info: Dictionary = asset_db.manifest.get(id, {})
+		if str(info.get("path", "")) != str(expected["path"]):
+			failures.append("%s must use standalone icon %s" % [id, expected["path"]])
+		if info.has("region"):
+			failures.append("%s must not use an atlas region" % id)
+		var tex: Texture2D = asset_db.tex(id)
+		if tex == null or tex.get_width() < int(expected["min_width"]) or tex.get_height() < int(expected["min_height"]):
+			failures.append("%s texture did not load at expected standalone dimensions" % id)
 	var display_font: Font = load("res://assets/fonts/MaShanZheng-Regular.ttf")
 	var body_font: Font = load("res://assets/fonts/NotoSansCJKsc-Regular.otf")
 	if not body_font.has_char(0x00b7):
