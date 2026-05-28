@@ -1,0 +1,14 @@
+{
+  "stat_sword_power": {"name": "剑心通明", "school": "common", "rarity": "common", "max_stacks": 99, "summary": "剑意+6", "effects": {"sword_power": 6}, "art_id": "icon_metal"},
+  "stat_spell_power": {"name": "灵符入窍", "school": "common", "rarity": "common", "max_stacks": 99, "summary": "法力+6", "effects": {"spell_power": 6}, "art_id": "icon_fire"},
+  "stat_engineering": {"name": "御器成阵", "school": "common", "rarity": "common", "max_stacks": 99, "summary": "御器之力+6", "effects": {"engineering": 6}, "art_id": "icon_banner"},
+  "stat_attack_speed": {"name": "流光剑诀", "school": "common", "rarity": "common", "max_stacks": 99, "summary": "攻速+10%", "effects": {"attack_speed": 0.1}, "art_id": "fx_slash"},
+  "stat_range": {"name": "神识外放", "school": "common", "rarity": "common", "max_stacks": 99, "summary": "范围+12%，摄物+5", "effects": {"range_pct": 0.12, "harvesting": 5}, "art_id": "pickup_qi"},
+  "metal_mastery": {"name": "金灵御剑", "school": "metal", "rarity": "rare", "max_stacks": 6, "summary": "金伤+14%，剑意+4", "effects": {"metal_damage_pct": 0.14, "sword_power": 4}, "art_id": "icon_metal"},
+  "wood_mastery": {"name": "木灵毒蛊", "school": "wood", "rarity": "rare", "max_stacks": 6, "summary": "木伤+14%，元素+8%", "effects": {"wood_damage_pct": 0.14, "element_pct": 0.08}, "art_id": "icon_wood"},
+  "water_mastery": {"name": "水灵守一", "school": "water", "rarity": "rare", "max_stacks": 6, "summary": "水伤+14%，护盾+12", "effects": {"water_damage_pct": 0.14, "max_qi_shield": 12}, "art_id": "icon_water"},
+  "fire_mastery": {"name": "火灵焚天", "school": "fire", "rarity": "rare", "max_stacks": 6, "summary": "火伤+14%，暴击+4%", "effects": {"fire_damage_pct": 0.14, "crit_chance": 0.04}, "art_id": "icon_fire"},
+  "earth_mastery": {"name": "土灵镇岳", "school": "earth", "rarity": "rare", "max_stacks": 6, "summary": "土伤+14%，护甲+3", "effects": {"earth_damage_pct": 0.14, "armor": 3}, "art_id": "icon_earth"},
+  "five_root_bridge": {"name": "五行互济", "school": "common", "rarity": "rare", "max_stacks": 4, "summary": "元素互转增强，全伤+6%", "effects": {"damage_pct": 0.06, "root_conversion_bonus": 0.08}, "art_id": "fx_ascend"},
+  "blood_return": {"name": "噬灵归元", "school": "common", "rarity": "rare", "max_stacks": 4, "summary": "噬灵+5%，气血+12", "effects": {"lifesteal": 0.05, "max_hp": 12}, "art_id": "icon_crit"}
+}

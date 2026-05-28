@@ -1,0 +1,7 @@
+{
+  "base_offer_count": 4,
+  "reroll_cost": 8,
+  "bag_upgrade_base": 14,
+  "bag_upgrade_step": 8,
+  "weights": {"weapon": 40, "skill": 42, "item": 18}
+}

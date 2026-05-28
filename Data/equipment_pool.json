@@ -1,0 +1,10 @@
+{
+  "starter_priority": ["metal", "fire", "earth", "water", "wood"],
+  "starter_by_element": {
+    "metal": "guanri_sword",
+    "fire": "fentian_talisman",
+    "earth": "zhenyue_chu",
+    "water": "hantan_sword",
+    "wood": "shigu_sting"
+  }
+}

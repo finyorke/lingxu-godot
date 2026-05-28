@@ -1,0 +1,9 @@
+{
+  "realms": [
+    {"id": "lianqi", "name": "练气", "min_level": 1, "bonus": {}},
+    {"id": "zhuji", "name": "筑基", "min_level": 5, "bonus": {"heal_full": true}},
+    {"id": "jindan", "name": "金丹", "min_level": 10, "bonus": {"blade_extra": 1, "rarity_boost": 1}},
+    {"id": "yuanying", "name": "元婴", "min_level": 16, "bonus": {"damage_pct": 0.15, "max_qi_shield": 30}},
+    {"id": "huashen", "name": "化神", "min_level": 23, "bonus": {"sword_split": true, "allow_legendary": true}}
+  ]
+}

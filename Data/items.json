@@ -1,0 +1,17 @@
+{
+  "ningshen_pill": {"name": "凝神丹方", "element": null, "type": "buff", "tier_max": 3, "slots": 2, "effects": {"crit_chance": 0.08}, "summary": "暴击+8%，无代价、占2格", "art_id": "icon_crit"},
+  "naling_ring": {"name": "纳灵戒", "element": null, "type": "buff", "tier_max": 3, "slots": 1, "effects": {"max_hp": 20, "hp_regen": 1}, "summary": "气血+20，回气+1", "art_id": "pickup_qi"},
+  "lucky_coin": {"name": "招财铜钱", "element": null, "type": "cost", "tier_max": 3, "slots": 1, "effects": {"luck": 5}, "cost_effects": {"damage_pct": -0.05}, "summary": "气运+5，全伤-5%", "art_id": "pickup_stone"},
+  "swift_talisman": {"name": "疾风符", "element": null, "type": "cost", "tier_max": 3, "slots": 1, "effects": {"attack_speed": 0.12}, "cost_effects": {"sword_power": -4}, "summary": "攻速+12%，剑意-4", "art_id": "icon_fire"},
+  "bloodlust_jade": {"name": "嗜血玉", "element": null, "type": "cost", "tier_max": 3, "slots": 1, "effects": {"lifesteal": 0.08}, "cost_effects": {"max_hp": -10}, "summary": "噬灵+8%，气血-10", "art_id": "icon_crit"},
+  "sword_heart_stone": {"name": "剑心石", "element": "metal", "type": "buff", "tier_max": 3, "slots": 1, "effects": {"sword_power": 8, "metal_damage_pct": 0.08}, "summary": "剑意+8，金伤+8%", "art_id": "icon_metal"},
+  "dual_sword_pendant": {"name": "两仪剑佩", "element": "metal", "type": "trigger", "tier_max": 3, "slots": 2, "effects": {"sword_split_chance": 0.15}, "summary": "飞剑命中15%分裂小剑气、占2格", "art_id": "icon_banner"},
+  "venom_pouch": {"name": "蚀毒囊", "element": "wood", "type": "buff", "tier_max": 3, "slots": 1, "effects": {"wood_damage_pct": 0.15, "element_pct": 0.06}, "summary": "木伤+15%，元素+6%", "art_id": "icon_wood"},
+  "plague_jar": {"name": "瘟疫罐", "element": "wood", "type": "enable", "tier_max": 3, "slots": 1, "effects": {"poison_contagion": true, "wood_damage_pct": 0.08}, "summary": "中毒可扩散，木伤+8%", "art_id": "icon_wood"},
+  "frost_pendant": {"name": "玄冰坠", "element": "water", "type": "buff", "tier_max": 3, "slots": 1, "effects": {"water_damage_pct": 0.12, "dodge": 0.04}, "summary": "水伤+12%，身法+4%", "art_id": "icon_water"},
+  "turtle_charm": {"name": "龟息符", "element": "water", "type": "cost", "tier_max": 3, "slots": 1, "effects": {"max_qi_shield": 25}, "cost_effects": {"qi_shield_delay": 1.0}, "summary": "护体灵盾+25，回盾延迟+1秒", "art_id": "icon_shield"},
+  "blaze_seal": {"name": "业火印", "element": "fire", "type": "buff", "tier_max": 3, "slots": 1, "effects": {"fire_damage_pct": 0.18, "crit_chance": 0.03}, "summary": "火伤+18%，暴击+3%", "art_id": "icon_fire"},
+  "execute_jade": {"name": "斩杀玉", "element": "fire", "type": "trigger", "tier_max": 3, "slots": 2, "effects": {"fire_execute": true, "execute_threshold": 0.25, "execute_mult": 1.75}, "summary": "敌血<25%受火伤×1.75必暴、占2格", "art_id": "icon_crit"},
+  "thick_earth_armor": {"name": "厚土铠", "element": "earth", "type": "cost", "tier_max": 3, "slots": 1, "effects": {"armor": 6, "earth_damage_pct": 0.06}, "cost_effects": {"speed_pct": -0.08}, "summary": "护甲+6，土伤+6%，移速-8%", "art_id": "icon_earth"},
+  "zhenyue_seal": {"name": "镇岳符", "element": "earth", "type": "trigger", "tier_max": 3, "slots": 1, "effects": {"melee_quake_wave": true, "quake_radius": 80, "earth_damage_pct": 0.1}, "summary": "近身命中震荡，土伤+10%", "art_id": "icon_earth"}
+}

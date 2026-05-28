@@ -1,0 +1,11 @@
+{
+  "yunxi": {
+    "name": "执剑人·云栖",
+    "stat_mods": {},
+    "restrict_elements": null,
+    "restrict_melee_only": false,
+    "start_weapon": "guanri_sword",
+    "unlock_cost": 0,
+    "art_id": "char_yunxi"
+  }
+}
