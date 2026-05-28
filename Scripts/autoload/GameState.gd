@@ -13,6 +13,14 @@ const STARTER_BY_ELEMENT := {
 const MULTI_ELEMENT_BONUS := {1: 1.0, 2: 1.16, 3: 1.32, 4: 1.50, 5: 1.65}
 const COUNTERS := {"metal": "wood", "wood": "earth", "earth": "water", "water": "fire", "fire": "metal"}
 const GENERATES := {"wood": "fire", "fire": "earth", "earth": "metal", "metal": "water", "water": "wood"}
+const WEAPON_TIER_MAX := 4
+const WEAPON_TIER_NAMES := {1: "凡品", 2: "灵品", 3: "法品", 4: "仙品"}
+const WEAPON_TIER_COLORS := {
+	1: "#7f9088",
+	2: "#5fe0c8",
+	3: "#e8b259",
+	4: "#c8a2ff"
+}
 const SET_EFFECT_KEYS := {
 	"execute_threshold": true,
 	"execute_mult": true,
@@ -26,6 +34,7 @@ var affinity_id := "five"
 var stats := {}
 var base_stats := {}
 var active_weapons: Array = []
+var weapon_reserve: Array = []
 var bag: Array = []
 var skill_stacks := {}
 var level := 1
@@ -54,6 +63,7 @@ func start_run(active: Array, sealed: Array, chosen_affinity: String) -> void:
 	affinity_id = chosen_affinity
 	stats = ConfigDB.table("stats").duplicate(true)
 	active_weapons.clear()
+	weapon_reserve.clear()
 	bag.clear()
 	skill_stacks.clear()
 	level = 1
@@ -92,31 +102,96 @@ func _fill_starting_weapons() -> void:
 	for e in ordered:
 		if active_weapons.size() >= int(stats.get("weapon_slots", 4)):
 			break
-		equip_weapon(STARTER_BY_ELEMENT.get(e, "guanri_sword"))
+		_grant_starting_weapon(STARTER_BY_ELEMENT.get(e, "guanri_sword"))
 	var idx := 0
 	while active_weapons.size() < int(stats.get("weapon_slots", 4)) and not ordered.is_empty():
-		equip_weapon(STARTER_BY_ELEMENT.get(ordered[idx % ordered.size()], "guanri_sword"))
+		_grant_starting_weapon(STARTER_BY_ELEMENT.get(ordered[idx % ordered.size()], "guanri_sword"))
 		idx += 1
 
-func equip_weapon(weapon_id: String) -> void:
-	var weapon := ConfigDB.entry("weapons", weapon_id).duplicate(true)
+func _grant_starting_weapon(weapon_id: String) -> void:
+	var weapon := _make_weapon_instance(weapon_id, 1)
 	if weapon.is_empty():
 		return
+	active_weapons.append(weapon)
+	SignalsBus.weapon_changed.emit(active_weapons.size() - 1, weapon)
+
+func _make_weapon_instance(weapon_id: String, tier := 1) -> Dictionary:
+	var weapon := ConfigDB.entry("weapons", weapon_id).duplicate(true)
+	if weapon.is_empty():
+		return {}
 	weapon["id"] = weapon_id
-	weapon["tier"] = int(weapon.get("tier", 1))
+	weapon["tier"] = clampi(int(tier), 1, WEAPON_TIER_MAX)
+	return weapon
+
+func equip_weapon(weapon_id: String, tier := 1) -> bool:
+	var weapon := _make_weapon_instance(weapon_id, tier)
+	if weapon.is_empty():
+		return false
+	return acquire_weapon(weapon)
+
+func acquire_weapon(weapon: Dictionary) -> bool:
+	if weapon.is_empty():
+		return false
+	var weapon_id := str(weapon.get("id", ""))
+	var tier := clampi(int(weapon.get("tier", 1)), 1, WEAPON_TIER_MAX)
+	weapon["tier"] = tier
+	if tier < WEAPON_TIER_MAX:
+		var match := _find_merge_match(weapon_id, tier)
+		if not match.is_empty():
+			_upgrade_weapon_at(str(match["place"]), int(match["index"]))
+			return true
 	if active_weapons.size() < int(stats.get("weapon_slots", 4)):
 		active_weapons.append(weapon)
 		SignalsBus.weapon_changed.emit(active_weapons.size() - 1, weapon)
-		return
-	var replace_idx := 0
-	var lowest := 999999.0
+		return true
+	if weapon_reserve.size() < weapon_reserve_capacity():
+		weapon_reserve.append(weapon)
+		return true
+	return false
+
+func can_accept_weapon(weapon_id: String, tier := 1) -> bool:
+	var normalized_tier := clampi(int(tier), 1, WEAPON_TIER_MAX)
+	if normalized_tier < WEAPON_TIER_MAX and not _find_merge_match(weapon_id, normalized_tier).is_empty():
+		return true
+	return active_weapons.size() < int(stats.get("weapon_slots", 4)) or weapon_reserve.size() < weapon_reserve_capacity()
+
+func weapon_reserve_capacity() -> int:
+	return max(0, int(stats.get("weapon_reserve_slots", 2)))
+
+func _find_merge_match(weapon_id: String, tier: int) -> Dictionary:
 	for i in range(active_weapons.size()):
-		var score := float(active_weapons[i].get("base_damage", 0)) * float(active_weapons[i].get("tier", 1))
-		if score < lowest:
-			lowest = score
-			replace_idx = i
-	active_weapons[replace_idx] = weapon
-	SignalsBus.weapon_changed.emit(replace_idx, weapon)
+		var weapon: Dictionary = active_weapons[i]
+		if str(weapon.get("id", "")) == weapon_id and int(weapon.get("tier", 1)) == tier:
+			return {"place": "active", "index": i}
+	for i in range(weapon_reserve.size()):
+		var weapon: Dictionary = weapon_reserve[i]
+		if str(weapon.get("id", "")) == weapon_id and int(weapon.get("tier", 1)) == tier:
+			return {"place": "reserve", "index": i}
+	return {}
+
+func _upgrade_weapon_at(place: String, index: int) -> void:
+	if place == "active":
+		if index < 0 or index >= active_weapons.size():
+			return
+		var weapon: Dictionary = active_weapons[index]
+		weapon["tier"] = min(WEAPON_TIER_MAX, int(weapon.get("tier", 1)) + 1)
+		active_weapons[index] = weapon
+		SignalsBus.weapon_changed.emit(index, weapon)
+	elif place == "reserve":
+		if index < 0 or index >= weapon_reserve.size():
+			return
+		var weapon: Dictionary = weapon_reserve[index]
+		weapon["tier"] = min(WEAPON_TIER_MAX, int(weapon.get("tier", 1)) + 1)
+		weapon_reserve[index] = weapon
+
+func weapon_tier_name(tier: int) -> String:
+	return str(WEAPON_TIER_NAMES.get(clampi(tier, 1, WEAPON_TIER_MAX), "凡品"))
+
+func weapon_tier_color(tier: int) -> Color:
+	return Color(str(WEAPON_TIER_COLORS.get(clampi(tier, 1, WEAPON_TIER_MAX), "#7f9088")))
+
+func weapon_tier_multiplier(tier: int) -> float:
+	return pow(1.7, float(clampi(tier, 1, WEAPON_TIER_MAX) - 1))
 
 func add_item(item_id: String) -> bool:
 	var item := ConfigDB.entry("items", item_id).duplicate(true)
@@ -205,7 +280,7 @@ func calculate_weapon_damage(weapon: Dictionary, target: Node = null) -> Diction
 	raw *= root_affinity_multiplier(element)
 	raw *= 1.0 + converted_element_bonus(element) + float(stats.get("element_pct", 0.0))
 	raw *= multi_element_multiplier()
-	raw *= 1.0 + 0.22 * float(int(weapon.get("tier", 1)) - 1)
+	raw *= weapon_tier_multiplier(int(weapon.get("tier", 1)))
 	var crit_chance := float(stats.get("crit_chance", 0.05))
 	for effect in weapon.get("on_hit", []):
 		var kind := str(effect.get("effect", ""))

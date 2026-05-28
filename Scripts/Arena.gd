@@ -53,6 +53,7 @@ var hp_value_label: Label
 var shield_value_label: Label
 var xp_value_label: Label
 var weapon_slot_buttons: Array = []
+var weapon_reserve_buttons: Array = []
 var stat_icon_buttons: Array = []
 var message_label: Label
 
@@ -142,6 +143,18 @@ func _setup_hud() -> void:
 		var slot := _hud_icon_button(Vector2(80, 80))
 		weapon_slots.add_child(slot)
 		weapon_slot_buttons.append(slot)
+	var reserve_panel := PanelContainer.new()
+	reserve_panel.custom_minimum_size = Vector2(194, 90)
+	reserve_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.035, 0.027, 0.042, 0.72), Color("#c8a2ff"), 1, 6))
+	top.add_child(reserve_panel)
+	var reserve_slots := HBoxContainer.new()
+	reserve_slots.add_theme_constant_override("separation", 10)
+	reserve_panel.add_child(reserve_slots)
+	weapon_reserve_buttons.clear()
+	for i in range(GameState.weapon_reserve_capacity()):
+		var slot := _hud_icon_button(Vector2(80, 80))
+		reserve_slots.add_child(slot)
+		weapon_reserve_buttons.append(slot)
 	var stat_panel := PanelContainer.new()
 	stat_panel.anchor_left = 0.02
 	stat_panel.anchor_top = 0.84
@@ -206,6 +219,17 @@ func _hud_icon_button(size: Vector2) -> Button:
 	b.add_theme_stylebox_override("hover", _stylebox(Color(0.05, 0.09, 0.1, 0.96), Color("#e8b259"), 2, 5))
 	b.add_theme_stylebox_override("pressed", _stylebox(Color(0.08, 0.1, 0.09, 0.98), Color("#e8b259"), 2, 5))
 	return b
+
+func _set_weapon_button_style(button: Button, tier: int, empty := false) -> void:
+	if empty:
+		button.add_theme_stylebox_override("normal", _stylebox(Color(0.03, 0.055, 0.06, 0.9), Color(0.35, 0.88, 0.82, 0.34), 1, 5))
+		button.add_theme_stylebox_override("hover", _stylebox(Color(0.05, 0.09, 0.1, 0.96), Color("#e8b259"), 2, 5))
+		button.add_theme_stylebox_override("pressed", _stylebox(Color(0.08, 0.1, 0.09, 0.98), Color("#e8b259"), 2, 5))
+		return
+	var tier_color := GameState.weapon_tier_color(tier)
+	button.add_theme_stylebox_override("normal", _stylebox(Color(tier_color.r, tier_color.g, tier_color.b, 0.18), Color(tier_color.r, tier_color.g, tier_color.b, 0.74), 2, 5))
+	button.add_theme_stylebox_override("hover", _stylebox(Color(tier_color.r, tier_color.g, tier_color.b, 0.28), Color("#fff4b8"), 2, 5))
+	button.add_theme_stylebox_override("pressed", _stylebox(Color(tier_color.r, tier_color.g, tier_color.b, 0.34), Color("#e8b259"), 2, 5))
 
 func _stylebox(bg: Color, border: Color, border_width: int, radius: int) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
@@ -282,7 +306,7 @@ func _fire_weapon(weapon: Dictionary) -> void:
 		for effect in weapon.get("on_hit", []):
 			if str(effect.get("effect", "")) == "grant_shield":
 				var scale_eng := float(effect.get("scale_eng", 1.0))
-				var tier_mult := 1.0 + 0.22 * float(int(weapon.get("tier", 1)) - 1)
+				var tier_mult := GameState.weapon_tier_multiplier(int(weapon.get("tier", 1)))
 				shield_gain += (8.0 + float(GameState.stats.get("engineering", 0.0))) * scale_eng * tier_mult
 		_add_player_shield(shield_gain)
 		_spawn_fx(player.global_position, "fx_water", 0.25)
@@ -646,7 +670,14 @@ func _roll_offers(count: int) -> Array:
 		var w := ConfigDB.entry("weapons", id)
 		if bool(w.get("legendary", false)) and GameState.realm != "huashen":
 			continue
-		pool.append({"kind": "weapon", "id": id, "name": w.get("name", id), "summary": "%s法器 · %s伤害 %.0f" % [GameState.root_name(w.get("element", "")), w.get("class", ""), float(w.get("base_damage", 0))], "art_id": _offer_art_id(id), "data": w})
+		var data := w.duplicate(true)
+		var tier := GameState.WEAPON_TIER_MAX if bool(data.get("legendary", false)) else _roll_weapon_tier()
+		if not GameState.can_accept_weapon(id, tier):
+			continue
+		data["id"] = id
+		data["tier"] = tier
+		var tier_mult := GameState.weapon_tier_multiplier(tier)
+		pool.append({"kind": "weapon", "id": id, "tier": tier, "name": data.get("name", id), "summary": "%s法器 · %s伤害 %.0f" % [GameState.root_name(data.get("element", "")), data.get("class", ""), float(data.get("base_damage", 0)) * tier_mult], "art_id": _offer_art_id(id), "data": data})
 	for id in GameState.filtered_ids("items"):
 		var item := ConfigDB.entry("items", id)
 		pool.append({"kind": "item", "id": id, "name": item.get("name", id), "summary": item.get("summary", ""), "art_id": _offer_art_id(id), "data": item})
@@ -664,14 +695,53 @@ func _roll_offers(count: int) -> Array:
 		result.append(offer)
 	return result
 
+func _roll_weapon_tier() -> int:
+	var weights := {1: 68.0, 2: 24.0, 3: 7.0, 4: 1.0}
+	match GameState.realm:
+		"zhuji":
+			weights = {1: 58.0, 2: 30.0, 3: 10.0, 4: 2.0}
+		"jindan":
+			weights = {1: 44.0, 2: 34.0, 3: 17.0, 4: 5.0}
+		"yuanying":
+			weights = {1: 32.0, 2: 36.0, 3: 23.0, 4: 9.0}
+		"huashen":
+			weights = {1: 22.0, 2: 34.0, 3: 28.0, 4: 16.0}
+	var luck: float = max(0.0, float(GameState.stats.get("luck", 0.0)))
+	weights[3] = float(weights[3]) + luck * 0.18
+	weights[4] = float(weights[4]) + luck * 0.08
+	var total := 0.0
+	for weight in weights.values():
+		total += float(weight)
+	var roll := rng.randf() * total
+	var running := 0.0
+	for tier in [1, 2, 3, 4]:
+		running += float(weights[tier])
+		if roll <= running:
+			return tier
+	return 1
+
 func _offer_button(offer: Dictionary) -> Button:
+	var kind_id := str(offer.get("kind", ""))
+	var data: Dictionary = offer.get("data", {})
+	var tier := int(offer.get("tier", data.get("tier", 1)))
+	var tier_color := GameState.weapon_tier_color(tier)
+	var normal_bg := Color(0.026, 0.04, 0.045, 0.96)
+	var normal_border := Color(0.38, 0.9, 0.82, 0.38)
+	if kind_id == "weapon":
+		normal_bg = normal_bg.lerp(tier_color, 0.18)
+		normal_border = Color(tier_color.r, tier_color.g, tier_color.b, 0.82)
 	var b := Button.new()
 	b.custom_minimum_size = OFFER_CARD_SIZE
 	b.text = ""
 	b.focus_mode = Control.FOCUS_NONE
-	b.add_theme_stylebox_override("normal", _stylebox(Color(0.026, 0.04, 0.045, 0.96), Color(0.38, 0.9, 0.82, 0.38), 1, 6))
-	b.add_theme_stylebox_override("hover", _stylebox(Color(0.045, 0.072, 0.076, 0.98), Color("#e8b259"), 2, 6))
+	b.add_theme_stylebox_override("normal", _stylebox(normal_bg, normal_border, 2 if kind_id == "weapon" else 1, 6))
+	b.add_theme_stylebox_override("hover", _stylebox(Color(0.045, 0.072, 0.076, 0.98).lerp(tier_color, 0.15 if kind_id == "weapon" else 0.0), Color("#e8b259"), 2, 6))
 	b.add_theme_stylebox_override("pressed", _stylebox(Color(0.055, 0.066, 0.055, 0.98), Color("#e8b259"), 2, 6))
+	b.add_theme_stylebox_override("disabled", _stylebox(Color(0.02, 0.024, 0.026, 0.82), Color(0.36, 0.38, 0.38, 0.42), 1, 6))
+	if kind_id == "weapon" and not GameState.can_accept_weapon(str(offer.get("id", "")), tier):
+		b.disabled = true
+		b.modulate = Color(0.66, 0.7, 0.68, 1.0)
+		b.tooltip_text = "法器槽与备炼栏已满，且没有同名同品可合成"
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -687,7 +757,7 @@ func _offer_button(offer: Dictionary) -> Button:
 	var art_panel := PanelContainer.new()
 	art_panel.custom_minimum_size = Vector2(0, 154)
 	art_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	art_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.012, 0.025, 0.028, 0.98), _element_color(str(offer.get("data", {}).get("element", ""))), 2, 5))
+	art_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.012, 0.025, 0.028, 0.98), _element_color(str(data.get("element", ""))), 2, 5))
 	box.add_child(art_panel)
 	var art := TextureRect.new()
 	art.texture = AssetDB.tex(str(offer.get("art_id", "pickup_qi")))
@@ -698,11 +768,14 @@ func _offer_button(offer: Dictionary) -> Button:
 	var name := Label.new()
 	name.text = str(offer["name"])
 	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_apply_display_font(name, 31, Color("#fff8e8"), 2)
+	_apply_display_font(name, 31, tier_color if kind_id == "weapon" else Color("#fff8e8"), 2)
 	name.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(name)
 	var kind := Label.new()
-	kind.text = "%s · %s" % [_kind_name(str(offer["kind"])), _offer_school_name(offer)]
+	if kind_id == "weapon":
+		kind.text = "%s · %s · %s" % [_kind_name(kind_id), GameState.weapon_tier_name(tier), _offer_school_name(offer)]
+	else:
+		kind.text = "%s · %s" % [_kind_name(kind_id), _offer_school_name(offer)]
 	kind.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	kind.add_theme_font_size_override("font_size", 17)
 	kind.add_theme_color_override("font_color", Color("#e8b259"))
@@ -742,10 +815,15 @@ func _offer_effect_rows(offer: Dictionary) -> Array:
 		"weapon":
 			var element := str(data.get("element", ""))
 			var klass := str(data.get("class", ""))
+			var tier := int(data.get("tier", 1))
+			var tier_row := _effect_row("weapon_tier", "品阶", GameState.weapon_tier_name(tier), element)
+			tier_row["color"] = GameState.weapon_tier_color(tier)
+			rows.append(tier_row)
 			if klass == "shield":
 				rows.append(_effect_row("max_qi_shield", "护盾生成", "+%.0f" % max(10.0, float(data.get("base_damage", 0.0)) + 10.0), element))
 			else:
-				rows.append(_effect_row("%s_damage_pct" % element, "%s伤害" % GameState.root_name(element), "%.0f" % float(data.get("base_damage", 0.0)), element))
+				var shown_damage := float(data.get("base_damage", 0.0)) * GameState.weapon_tier_multiplier(tier)
+				rows.append(_effect_row("%s_damage_pct" % element, "%s伤害" % GameState.root_name(element), "%.0f" % shown_damage, element))
 			rows.append(_effect_row("attack_speed", "冷却", "%.2fs" % float(data.get("cooldown", 0.0)), element))
 			if float(data.get("range", 0.0)) > 0.0:
 				rows.append(_effect_row("range_pct", "射程", "%.0f" % float(data.get("range", 0.0)), element))
@@ -1020,14 +1098,21 @@ func _element_color(element: String) -> Color:
 			return Color("#5fe0c8")
 
 func _choose_offer(offer: Dictionary) -> void:
+	var accepted := true
 	match offer["kind"]:
 		"weapon":
-			GameState.equip_weapon(str(offer["id"]))
+			accepted = GameState.equip_weapon(str(offer["id"]), int(offer.get("tier", 1)))
 		"item":
 			if not GameState.add_item(str(offer["id"])):
 				GameState.stones += 6
 		"skill":
 			GameState.apply_skill(str(offer["id"]))
+	if not accepted:
+		message_label.text = "法器槽与备炼栏已满"
+		var tween := create_tween()
+		tween.tween_interval(1.0)
+		tween.tween_callback(func(): message_label.text = "")
+		return
 	SignalsBus.market_choice.emit(offer["id"])
 	market_open = false
 	overlay_layer.queue_free()
@@ -1076,21 +1161,35 @@ func _update_hud() -> void:
 			var w: Dictionary = GameState.active_weapons[i]
 			slot.icon = AssetDB.tex(_offer_art_id(str(w.get("id", ""))))
 			slot.tooltip_text = _weapon_tooltip(i, w)
+			_set_weapon_button_style(slot, int(w.get("tier", 1)))
 		else:
 			slot.icon = AssetDB.tex("pickup_qi")
 			slot.tooltip_text = "空法器槽"
+			_set_weapon_button_style(slot, 1, true)
+	for i in range(weapon_reserve_buttons.size()):
+		var slot: Button = weapon_reserve_buttons[i]
+		if i < GameState.weapon_reserve.size():
+			var w: Dictionary = GameState.weapon_reserve[i]
+			slot.icon = AssetDB.tex(_offer_art_id(str(w.get("id", ""))))
+			slot.tooltip_text = _weapon_tooltip(i, w, true)
+			_set_weapon_button_style(slot, int(w.get("tier", 1)))
+		else:
+			slot.icon = AssetDB.tex("pickup_qi")
+			slot.tooltip_text = "空备炼栏"
+			_set_weapon_button_style(slot, 1, true)
 	for entry in stat_icon_buttons:
 		var button: Button = entry["button"]
 		var def: Dictionary = entry["def"]
 		button.icon = AssetDB.tex(str(def["icon"]))
 		button.tooltip_text = _stat_tooltip(def)
 
-func _weapon_tooltip(index: int, weapon: Dictionary) -> String:
+func _weapon_tooltip(index: int, weapon: Dictionary, reserve := false) -> String:
 	var element := str(weapon.get("element", ""))
+	var tier := int(weapon.get("tier", 1))
 	var lines := [
-		"%d. %s T%d" % [index + 1, str(weapon.get("name", "")), int(weapon.get("tier", 1))],
+		"%s%d. %s · %s" % ["备炼" if reserve else "", index + 1, str(weapon.get("name", "")), GameState.weapon_tier_name(tier)],
 		"%s · %s" % [GameState.root_name(element), str(weapon.get("class", ""))],
-		"伤害 %.0f  冷却 %.2fs  射程 %.0f" % [float(weapon.get("base_damage", 0.0)), float(weapon.get("cooldown", 0.0)), float(weapon.get("range", 0.0))]
+		"伤害 %.0f  冷却 %.2fs  射程 %.0f" % [float(weapon.get("base_damage", 0.0)) * GameState.weapon_tier_multiplier(tier), float(weapon.get("cooldown", 0.0)), float(weapon.get("range", 0.0))]
 	]
 	for effect in weapon.get("on_hit", []):
 		var row := _on_hit_row(effect, element)
@@ -1108,7 +1207,7 @@ func _stat_tooltip(def: Dictionary) -> String:
 	if key == "damage_pct":
 		extra = "\n多系倍率 %.0f%%" % (GameState.multi_element_multiplier() * 100.0)
 	elif key == "lifesteal":
-		extra = "\n背包 %d/%d" % [GameState.bag.size(), int(GameState.stats.get("bag_capacity", 5))]
+		extra = "\n法宝背包 %d/%d\n备炼栏 %d/%d" % [GameState.bag.size(), int(GameState.stats.get("bag_capacity", 5)), GameState.weapon_reserve.size(), GameState.weapon_reserve_capacity()]
 	return "%s：%s%s" % [label, value, extra]
 
 func _finish_run(title: String, _reason: String) -> void:

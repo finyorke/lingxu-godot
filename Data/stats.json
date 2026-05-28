@@ -19,6 +19,7 @@
   "harvesting": 0,
   "bag_capacity": 5,
   "bag_capacity_max": 10,
+  "weapon_reserve_slots": 2,
   "max_qi_shield": 60,
   "qi_shield_regen": 8,
   "qi_shield_delay": 3.5,
