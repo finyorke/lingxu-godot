@@ -60,8 +60,11 @@ func _spawn_hit_fx(pos: Vector2, element: String, is_crit: bool) -> void:
 	fx.global_position = pos
 	fx.scale = Vector2(0.16, 0.16)
 	fx.modulate = Color(1, 1, 1, 0.85)
-	get_tree().current_scene.add_child(fx)
-	var tween := create_tween()
+	var fx_parent := get_tree().current_scene
+	if fx_parent == null:
+		fx_parent = get_parent()
+	fx_parent.add_child(fx)
+	var tween := fx.create_tween()
 	tween.tween_property(fx, "scale", Vector2(0.34, 0.34), 0.16)
 	tween.parallel().tween_property(fx, "modulate:a", 0.0, 0.16)
 	tween.tween_callback(fx.queue_free)

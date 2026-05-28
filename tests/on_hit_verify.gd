@@ -55,6 +55,22 @@ func _run() -> void:
 	if not bool(execute_result.get("is_crit", false)):
 		failures.append("execute_jade did not force fire crit below threshold")
 
+	GameState.stats["crit_chance"] = 0.0
+	var projectile_enemy := _spawn_test_enemy(arena, Vector2(360, 30), 20.0)
+	var projectile: LingxuProjectile = load("res://Scenes/Weapon/Projectile.tscn").instantiate()
+	arena.add_child(projectile)
+	var projectile_weapon := ConfigDB.entry("weapons", "liuguang_blade").duplicate(true)
+	projectile.setup(projectile_weapon, projectile_enemy.global_position, projectile_enemy.global_position)
+	var fx_parent := get_tree().current_scene if get_tree().current_scene != null else get_tree().root
+	var fx_texture := AssetDB.tex("fx_metal")
+	var fx_count_before := _count_sprites_with_texture(fx_parent, fx_texture)
+	projectile.tick(0.0, [projectile_enemy], arena.player)
+	await get_tree().process_frame
+	await get_tree().create_timer(0.25).timeout
+	await get_tree().process_frame
+	if _count_sprites_with_texture(fx_parent, fx_texture) > fx_count_before:
+		failures.append("projectile hit FX lingered after projectile freed")
+
 	var boss_data := ConfigDB.entry("enemies", "serpent_boss")
 	if str(boss_data.get("sprite", "")) != "serpent_boss":
 		failures.append("serpent_boss still points at the wrong sprite id")
@@ -76,3 +92,13 @@ func _spawn_test_enemy(arena: Node, pos: Vector2, scale: float) -> LingxuEnemy:
 	arena.add_child(enemy)
 	arena.enemies.append(enemy)
 	return enemy
+
+func _count_sprites_with_texture(root: Node, texture: Texture2D) -> int:
+	var count := 0
+	for child in root.get_children():
+		if child is Sprite2D:
+			var sprite := child as Sprite2D
+			if sprite.texture == texture:
+				count += 1
+		count += _count_sprites_with_texture(child, texture)
+	return count
