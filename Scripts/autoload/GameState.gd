@@ -135,11 +135,10 @@ func acquire_weapon(weapon: Dictionary) -> bool:
 	var weapon_id := str(weapon.get("id", ""))
 	var tier := clampi(int(weapon.get("tier", 1)), 1, WEAPON_TIER_MAX)
 	weapon["tier"] = tier
-	if tier < WEAPON_TIER_MAX:
-		var match := _find_merge_match(weapon_id, tier)
-		if not match.is_empty():
-			_upgrade_weapon_at(str(match["place"]), int(match["index"]))
-			return true
+	var match := weapon_merge_target(weapon_id, tier)
+	if not match.is_empty():
+		_upgrade_weapon_at(str(match["place"]), int(match["index"]))
+		return true
 	if active_weapons.size() < int(stats.get("weapon_slots", 4)):
 		active_weapons.append(weapon)
 		SignalsBus.weapon_changed.emit(active_weapons.size() - 1, weapon)
@@ -150,10 +149,15 @@ func acquire_weapon(weapon: Dictionary) -> bool:
 	return false
 
 func can_accept_weapon(weapon_id: String, tier := 1) -> bool:
-	var normalized_tier := clampi(int(tier), 1, WEAPON_TIER_MAX)
-	if normalized_tier < WEAPON_TIER_MAX and not _find_merge_match(weapon_id, normalized_tier).is_empty():
+	if not weapon_merge_target(weapon_id, tier).is_empty():
 		return true
 	return active_weapons.size() < int(stats.get("weapon_slots", 4)) or weapon_reserve.size() < weapon_reserve_capacity()
+
+func weapon_merge_target(weapon_id: String, tier := 1) -> Dictionary:
+	var normalized_tier := clampi(int(tier), 1, WEAPON_TIER_MAX)
+	if normalized_tier >= WEAPON_TIER_MAX:
+		return {}
+	return _find_merge_match(weapon_id, normalized_tier)
 
 func weapon_reserve_capacity() -> int:
 	return max(0, int(stats.get("weapon_reserve_slots", 2)))
