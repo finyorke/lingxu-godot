@@ -33,6 +33,9 @@ const WEAPON_CAST_FEEDBACK_DURATION := 0.34
 var player: YunxiPlayer
 var enemies: Array = []
 var projectiles: Array = []
+var enemy_projectiles: Array = []
+var enemy_area_attacks: Array = []
+var pending_spawns: Array = []
 var pickups: Array = []
 var weapon_cds: Array = []
 var rng := RandomNumberGenerator.new()
@@ -431,9 +434,12 @@ func _physics_process(delta: float) -> void:
 	player.tick(delta, arena_radius)
 	camera.global_position = player.global_position + _shake_offset()
 	_update_enemies(delta)
+	_update_enemy_projectiles(delta)
+	_update_enemy_area_attacks(delta)
 	_update_weapons(delta)
 	_update_projectiles(delta)
 	_update_pickups(delta)
+	_update_spawn_warnings(delta)
 	_update_spawning(delta)
 	_update_bosses()
 	_update_burst()
@@ -825,6 +831,86 @@ func _update_projectiles(delta: float) -> void:
 	for projectile in projectiles:
 		projectile.tick(delta, enemies, player)
 
+func spawn_enemy_projectile(origin: Vector2, target_pos: Vector2, projectile_data: Dictionary) -> void:
+	var dir := target_pos - origin
+	if dir.length_squared() < 4.0:
+		dir = Vector2.RIGHT.rotated(rng.randf() * TAU)
+	var speed := float(projectile_data.get("speed", 280.0))
+	var node := Node2D.new()
+	node.name = "EnemyProjectile"
+	node.global_position = origin
+	node.z_index = 6
+	var sprite := Sprite2D.new()
+	sprite.texture = AssetDB.tex(str(projectile_data.get("art_id", "fx_fire")))
+	sprite.scale = Vector2.ONE * float(projectile_data.get("visual_scale", 0.11))
+	sprite.rotation = dir.angle()
+	var element := str(projectile_data.get("element", "fire"))
+	var tint := AssetDB.color_for_element(element)
+	sprite.modulate = Color(tint.r, tint.g, tint.b, 0.94)
+	node.add_child(sprite)
+	add_child(node)
+	enemy_projectiles.append({
+		"node": node,
+		"velocity": dir.normalized() * speed,
+		"ttl": float(projectile_data.get("ttl", 3.2)),
+		"radius": float(projectile_data.get("radius", 14.0)),
+		"damage": float(projectile_data.get("damage", 7.0)),
+		"element": element
+	})
+
+func _update_enemy_projectiles(delta: float) -> void:
+	var keep: Array = []
+	for projectile in enemy_projectiles:
+		var node: Node2D = projectile.get("node", null)
+		if node == null or not is_instance_valid(node):
+			continue
+		var velocity: Vector2 = projectile.get("velocity", Vector2.ZERO)
+		node.position += velocity * delta
+		node.rotation = velocity.angle()
+		projectile["ttl"] = float(projectile.get("ttl", 0.0)) - delta
+		var radius := float(projectile.get("radius", 14.0))
+		if player != null and is_instance_valid(player):
+			var hit_radius := radius + float(GameState.stats.get("body_radius", 22.0))
+			if node.global_position.distance_squared_to(player.global_position) <= hit_radius * hit_radius:
+				player.receive_damage(float(projectile.get("damage", 7.0)))
+				_spawn_fx(node.global_position, "fx_%s" % str(projectile.get("element", "fire")), 0.18)
+				node.queue_free()
+				continue
+		if float(projectile["ttl"]) <= 0.0:
+			node.queue_free()
+			continue
+		keep.append(projectile)
+	enemy_projectiles = keep
+
+func queue_enemy_area_attack(center: Vector2, radius: float, delay: float, damage: float, element := "earth") -> void:
+	var marker := _make_warning_marker(center, radius, AssetDB.color_for_element(element))
+	marker["duration"] = max(0.05, delay)
+	marker["time"] = max(0.05, delay)
+	marker["damage"] = damage
+	marker["element"] = element
+	marker["flash_count"] = 3.0
+	enemy_area_attacks.append(marker)
+
+func _update_enemy_area_attacks(delta: float) -> void:
+	var keep: Array = []
+	for attack in enemy_area_attacks:
+		attack["time"] = float(attack.get("time", 0.0)) - delta
+		_animate_warning_marker(attack)
+		if float(attack["time"]) > 0.0:
+			keep.append(attack)
+			continue
+		var marker: Node2D = attack.get("node", null)
+		if marker != null and is_instance_valid(marker):
+			marker.queue_free()
+		var center: Vector2 = attack.get("pos", Vector2.ZERO)
+		var radius := float(attack.get("radius", 70.0))
+		if player != null and is_instance_valid(player):
+			var body_radius := float(GameState.stats.get("body_radius", 22.0))
+			if center.distance_squared_to(player.global_position) <= (radius + body_radius) * (radius + body_radius):
+				player.receive_damage(float(attack.get("damage", 10.0)))
+		_spawn_fx(center, "fx_%s" % str(attack.get("element", "earth")), 0.26)
+	enemy_area_attacks = keep
+
 func _update_pickups(delta: float) -> void:
 	var keep: Array = []
 	var radius := float(GameState.stats.get("pickup_radius", 60)) + float(GameState.stats.get("harvesting", 0.0))
@@ -853,13 +939,16 @@ func _update_spawning(delta: float) -> void:
 		return
 	var wave := _current_wave()
 	var cap := int(wave.get("cap", 80))
-	if enemies.size() >= cap:
+	var pressure := enemies.size() + pending_spawns.size()
+	if pressure >= cap:
 		spawn_timer = 0.5
 		return
 	var pack: Array = wave.get("pack", [2, 4])
-	var count := rng.randi_range(int(pack[0]), int(pack[1]))
+	var count: int = mini(rng.randi_range(int(pack[0]), int(pack[1])), cap - pressure)
 	for i in range(count):
-		_spawn_enemy(str(wave.get("enemy", "xie_wolf")))
+		var enemy_id := _pick_wave_enemy(wave)
+		var mode := _pick_spawn_mode(wave)
+		_queue_enemy_spawn(enemy_id, false, mode, _spawn_warning_delay(wave, mode))
 	spawn_timer = max(0.16, float(wave.get("interval", 1.0)) * (1.0 - min(0.45, GameState.run_time / 1600.0)))
 
 func _current_wave() -> Dictionary:
@@ -869,11 +958,115 @@ func _current_wave() -> Dictionary:
 			return wave
 	return waves.back() if not waves.is_empty() else {"enemy": "xie_wolf", "interval": 1.0, "pack": [2, 4], "cap": 80}
 
+func _pick_wave_enemy(wave: Dictionary) -> String:
+	var pool: Array = wave.get("pool", [])
+	if pool.is_empty():
+		return str(wave.get("enemy", "xie_wolf"))
+	var total := 0.0
+	for entry in pool:
+		total += max(0.0, float(entry.get("weight", 1.0)))
+	if total <= 0.0:
+		return str(pool[0].get("enemy", "xie_wolf"))
+	var roll := rng.randf() * total
+	for entry in pool:
+		roll -= max(0.0, float(entry.get("weight", 1.0)))
+		if roll <= 0.0:
+			return str(entry.get("enemy", "xie_wolf"))
+	return str(pool.back().get("enemy", "xie_wolf"))
+
+func _pick_spawn_mode(wave: Dictionary, boss := false) -> String:
+	if boss:
+		return "inner"
+	var near_chance: float = clamp(float(wave.get("near_player_chance", 0.0)), 0.0, 0.8)
+	var inner_chance: float = clamp(float(wave.get("inner_chance", 0.0)), 0.0, 0.9 - near_chance)
+	var roll := rng.randf()
+	if roll < near_chance:
+		return "near_player"
+	if roll < near_chance + inner_chance:
+		return "inner"
+	return "edge"
+
+func _spawn_warning_delay(wave: Dictionary, mode: String) -> float:
+	if mode == "edge":
+		return float(wave.get("edge_warning", 0.0))
+	return float(wave.get("warning", 1.15))
+
 func _spawn_enemy(id: String, boss := false) -> void:
-	var enemy: LingxuEnemy = ENEMY_SCENE.instantiate()
+	_spawn_enemy_at(id, _choose_spawn_position(_pick_spawn_mode({}, boss), boss), boss)
+
+func _queue_enemy_spawn(id: String, boss := false, mode := "edge", delay := 0.0) -> void:
+	var pos := _choose_spawn_position(mode, boss)
+	if delay <= 0.0:
+		_spawn_enemy_at(id, pos, boss)
+		return
+	var enemy_data := ConfigDB.entry("enemies", id)
+	var element := str(enemy_data.get("hex_element", "fire"))
+	var color := AssetDB.color_for_element(element)
+	var marker := _make_warning_marker(pos, max(56.0, float(enemy_data.get("radius", 22.0)) * (2.2 if boss else 1.9)), color)
+	marker["id"] = id
+	marker["boss"] = boss
+	marker["duration"] = delay
+	marker["time"] = delay
+	marker["flash_count"] = 5.0 if boss else 4.0
+	pending_spawns.append(marker)
+
+func _update_spawn_warnings(delta: float) -> void:
+	var keep: Array = []
+	for spawn in pending_spawns:
+		spawn["time"] = float(spawn.get("time", 0.0)) - delta
+		_animate_warning_marker(spawn)
+		if float(spawn["time"]) > 0.0:
+			keep.append(spawn)
+			continue
+		var marker: Node2D = spawn.get("node", null)
+		if marker != null and is_instance_valid(marker):
+			marker.queue_free()
+		_spawn_enemy_at(str(spawn.get("id", "xie_wolf")), spawn.get("pos", Vector2.ZERO), bool(spawn.get("boss", false)))
+	pending_spawns = keep
+
+func _choose_spawn_position(mode: String, boss := false) -> Vector2:
+	match mode:
+		"inner":
+			return _random_inner_spawn_position(boss)
+		"near_player":
+			return _random_near_player_spawn_position()
+		_:
+			return _random_edge_spawn_position()
+
+func _random_edge_spawn_position() -> Vector2:
 	var angle := rng.randf() * TAU
-	var pos := Vector2(cos(angle) * arena_radius.x * rng.randf_range(0.86, 1.0), sin(angle) * arena_radius.y * rng.randf_range(0.86, 1.0))
-	enemy.position = pos
+	return Vector2(cos(angle) * arena_radius.x * rng.randf_range(0.86, 1.0), sin(angle) * arena_radius.y * rng.randf_range(0.86, 1.0))
+
+func _random_inner_spawn_position(boss := false) -> Vector2:
+	var min_distance := 340.0 if boss else 240.0
+	for i in range(18):
+		var pos := _random_point_in_arena(92.0 if boss else 72.0)
+		if player == null or not is_instance_valid(player) or pos.distance_to(player.global_position) >= min_distance:
+			return pos
+	var fallback_dir := Vector2.RIGHT.rotated(rng.randf() * TAU)
+	var origin := Vector2.ZERO if player == null or not is_instance_valid(player) else player.global_position
+	return _clamp_point_to_arena(origin + fallback_dir * min_distance, 72.0)
+
+func _random_near_player_spawn_position() -> Vector2:
+	var origin := Vector2.ZERO if player == null or not is_instance_valid(player) else player.global_position
+	var dir := Vector2.RIGHT.rotated(rng.randf() * TAU)
+	return _clamp_point_to_arena(origin + dir * rng.randf_range(260.0, 430.0), 80.0)
+
+func _random_point_in_arena(margin := 64.0) -> Vector2:
+	var angle := rng.randf() * TAU
+	var r := sqrt(rng.randf())
+	return Vector2(cos(angle) * max(32.0, arena_radius.x - margin) * r, sin(angle) * max(32.0, arena_radius.y - margin) * r)
+
+func _clamp_point_to_arena(pos: Vector2, margin := 32.0) -> Vector2:
+	var radius := Vector2(max(32.0, arena_radius.x - margin), max(32.0, arena_radius.y - margin))
+	var metric := (pos.x * pos.x) / (radius.x * radius.x) + (pos.y * pos.y) / (radius.y * radius.y)
+	if metric > 1.0:
+		return pos / sqrt(metric)
+	return pos
+
+func _spawn_enemy_at(id: String, pos: Vector2, boss := false) -> void:
+	var enemy: LingxuEnemy = ENEMY_SCENE.instantiate()
+	enemy.position = _clamp_point_to_arena(pos, 24.0)
 	var scale := 1.0 + GameState.run_time / 720.0 * 1.2
 	if boss:
 		scale *= 1.2
@@ -891,8 +1084,8 @@ func _update_bosses() -> void:
 		return
 	if GameState.run_time >= float(boss_times[boss_index]):
 		var id := "sword_demon" if boss_index == boss_times.size() - 1 else "serpent_boss"
-		_spawn_enemy(id, true)
-		message_label.text = "妖将现世：%s" % ConfigDB.entry("enemies", id).get("name", id)
+		_queue_enemy_spawn(id, true, "inner", 1.8)
+		message_label.text = "妖气凝聚：%s" % ConfigDB.entry("enemies", id).get("name", id)
 		var tween := create_tween()
 		tween.tween_interval(2.0)
 		tween.tween_callback(func(): message_label.text = "")
@@ -929,6 +1122,55 @@ func _spawn_pickup(pos: Vector2, kind: String, amount: float) -> void:
 	s.global_position = pos
 	add_child(s)
 	pickups.append({"node": s, "type": kind, "amount": amount})
+
+func _make_warning_marker(pos: Vector2, radius: float, color: Color) -> Dictionary:
+	var marker := Node2D.new()
+	marker.name = "WarningCircle"
+	marker.global_position = pos
+	marker.z_index = -2
+	var glow := Sprite2D.new()
+	glow.texture = AssetDB.tex("fx_warning")
+	glow.scale = Vector2.ONE * clamp(radius / 260.0, 0.18, 0.85)
+	glow.modulate = Color(color.r, color.g, color.b, 0.18)
+	marker.add_child(glow)
+	var ring := Line2D.new()
+	ring.width = 5
+	ring.closed = true
+	ring.default_color = Color(color.r, color.g, color.b, 0.82)
+	for i in range(72):
+		var a := float(i) / 72.0 * TAU
+		ring.add_point(Vector2(cos(a) * radius, sin(a) * radius))
+	marker.add_child(ring)
+	add_child(marker)
+	return {
+		"node": marker,
+		"ring": ring,
+		"glow": glow,
+		"pos": pos,
+		"radius": radius,
+		"color": color,
+		"duration": 1.0,
+		"time": 1.0,
+		"flash_count": 4.0
+	}
+
+func _animate_warning_marker(marker_data: Dictionary) -> void:
+	var marker: Node2D = marker_data.get("node", null)
+	if marker == null or not is_instance_valid(marker):
+		return
+	var duration: float = max(0.05, float(marker_data.get("duration", 1.0)))
+	var time_left: float = max(0.0, float(marker_data.get("time", 0.0)))
+	var elapsed: float = duration - time_left
+	var flash_count := float(marker_data.get("flash_count", 4.0))
+	var pulse := 0.25 + 0.75 * absf(sin((elapsed / duration) * flash_count * PI))
+	var color: Color = marker_data.get("color", Color("#f27348"))
+	var ring: Line2D = marker_data.get("ring", null)
+	if ring != null and is_instance_valid(ring):
+		ring.default_color = Color(color.r, color.g, color.b, lerpf(0.16, 0.88, pulse))
+	var glow: Sprite2D = marker_data.get("glow", null)
+	if glow != null and is_instance_valid(glow):
+		glow.modulate = Color(color.r, color.g, color.b, lerpf(0.06, 0.25, pulse))
+	marker.scale = Vector2.ONE * (1.0 + pulse * 0.045)
 
 func _spawn_fx(pos: Vector2, id: String, duration: float) -> void:
 	var fx := Sprite2D.new()
