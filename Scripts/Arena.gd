@@ -2,10 +2,12 @@ extends Node2D
 
 signal run_ended(result)
 
+const FontUtil := preload("res://Scripts/FontUtil.gd")
 const PLAYER_SCENE := preload("res://Scenes/Player/Player.tscn")
 const ENEMY_SCENE := preload("res://Scenes/Enemies/Enemy.tscn")
 const PROJECTILE_SCENE := preload("res://Scenes/Weapon/Projectile.tscn")
 const DISPLAY_FONT := preload("res://assets/fonts/MaShanZheng-Regular.ttf")
+const BODY_FONT := preload("res://assets/fonts/NotoSansCJKsc-Regular.otf")
 const HUD_STAT_DEFS := [
 	{"key": "damage_pct", "label": "全伤", "icon": "fx_crit"},
 	{"key": "metal_damage_pct", "label": "金伤", "icon": "icon_metal"},
@@ -58,6 +60,7 @@ var stat_icon_buttons: Array = []
 var message_label: Label
 
 func _ready() -> void:
+	FontUtil.ensure_fallback(DISPLAY_FONT, BODY_FONT)
 	rng.randomize()
 	var spawn_cfg: Dictionary = ConfigDB.table("spawn").get("arena", {})
 	arena_radius = Vector2(float(spawn_cfg.get("radius_x", 1200)), float(spawn_cfg.get("radius_y", 700)))

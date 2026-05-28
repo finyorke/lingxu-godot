@@ -45,6 +45,14 @@ func _init() -> void:
 	var attack_speed_tex: Texture2D = asset_db.tex("offer_stat_attack_speed")
 	if attack_speed_tex == null or attack_speed_tex.get_width() < 512 or attack_speed_tex.get_height() < 512:
 		failures.append("offer_stat_attack_speed texture did not load as a full standalone icon")
+	var display_font: Font = load("res://assets/fonts/MaShanZheng-Regular.ttf")
+	var body_font: Font = load("res://assets/fonts/NotoSansCJKsc-Regular.otf")
+	if not body_font.has_char(0x00b7):
+		failures.append("NotoSansCJKsc-Regular.otf must contain the middle dot glyph")
+	var font_util = load("res://Scripts/FontUtil.gd")
+	font_util.ensure_fallback(display_font, body_font)
+	if not _font_has_fallback(display_font, body_font.resource_path):
+		failures.append("display font must fall back to NotoSansCJKsc-Regular.otf")
 	if failures.is_empty():
 		print("SMOKE OK: data, CJK font, generated assets, and main scene are present.")
 		quit(0)
@@ -52,3 +60,9 @@ func _init() -> void:
 		for failure in failures:
 			push_error(failure)
 		quit(1)
+
+func _font_has_fallback(font: Font, fallback_path: String) -> bool:
+	for fallback: Font in font.get_fallbacks():
+		if fallback.resource_path == fallback_path:
+			return true
+	return false
