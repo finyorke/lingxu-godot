@@ -18,10 +18,10 @@ func setup(weapon_data: Dictionary, origin: Vector2, target_pos: Vector2) -> voi
 	velocity = dir.normalized() * float(weapon.get("proj_speed", 560.0))
 	ttl = 1.3
 	pierce_left = int(weapon.get("pierce", 0)) + 1
-	radius = 20.0 + float(weapon.get("tier", 1)) * 2.0
+	radius = float(weapon.get("hit_radius", 20.0 + float(weapon.get("tier", 1)) * 2.0))
 	sprite = Sprite2D.new()
 	sprite.texture = AssetDB.tex(str(weapon.get("art_id", "icon_metal")))
-	sprite.scale = Vector2(0.13, 0.13)
+	sprite.scale = Vector2.ONE * float(weapon.get("visual_scale", 0.13))
 	sprite.rotation = velocity.angle()
 	add_child(sprite)
 
