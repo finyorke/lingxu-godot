@@ -54,6 +54,20 @@ func _run() -> void:
 		_check_slack(market_stat_panel, Vector2(96, 28), "market stat panel", failures)
 		if market_stat_panel.find_children("*", "PanelContainer", true, false).size() < 14:
 			failures.append("market stat panel should show the full icon-row stat list")
+	var market_weapon_frame: Control = _find_node(arena, "MarketWeaponFrame")
+	var market_item_frame: Control = _find_node(arena, "MarketItemFrame")
+	var market_continue_button: Button = _find_node(arena, "MarketContinueButton")
+	if market_weapon_frame == null:
+		failures.append("MarketWeaponFrame was not found")
+	if market_item_frame == null:
+		failures.append("MarketItemFrame was not found")
+	if market_continue_button == null:
+		failures.append("MarketContinueButton was not found")
+	else:
+		if not market_continue_button.disabled:
+			failures.append("market continue button should be disabled until an offer is selected")
+		if market_item_frame != null and market_continue_button.global_position.x <= market_item_frame.global_position.x + market_item_frame.size.x:
+			failures.append("market continue button should sit to the right of the item frame")
 
 	if failures.is_empty():
 		print("HUD LAYOUT OK: top, stat, and weapon panels remain compact.")

@@ -50,9 +50,27 @@ func _run() -> void:
 		arena._choose_offer(selected_offer)
 		await process_frame
 		if not arena.market_open or not arena.market_choice_completed:
-			failures.append("choice market should stay open after selecting an offer")
+			failures.append("choice market should keep a pending selection")
 		if str(arena.market_selected_offer_id) != str(selected_offer.get("id", "")):
 			failures.append("choice market should remember the selected offer")
+		var chosen_offer := selected_offer
+		for offer in arena.market_offers:
+			if str(offer.get("id", "")) != str(selected_offer.get("id", "")) and arena._offer_block_reason(offer).is_empty():
+				arena._choose_offer(offer)
+				chosen_offer = offer
+				await process_frame
+				break
+		if str(arena.market_selected_offer_id) != str(chosen_offer.get("id", "")):
+			failures.append("choice market should allow changing the pending offer")
+		for button in _find_market_offer_buttons(arena.overlay_layer):
+			if str(button.get_meta("market_offer_id", "")) != str(chosen_offer.get("id", "")) and button.disabled:
+				failures.append("choice market should leave other offer cards selectable after picking one")
+				break
+		var chosen_id := str(chosen_offer.get("id", ""))
+		var before_weapon_count := _weapon_count(chosen_id)
+		var before_weapon_tier_total := _weapon_tier_total(chosen_id)
+		var before_item_count := _item_count(chosen_id)
+		var before_skill_stack := int(_game_state_dictionary("skill_stacks").get(chosen_id, 0))
 		continue_button = _find_button_by_text(arena.overlay_layer, "继续历练")
 		if continue_button == null or continue_button.disabled:
 			failures.append("choice market continue button should enable after selecting an offer")
@@ -61,6 +79,16 @@ func _run() -> void:
 			await process_frame
 			if arena.market_open:
 				failures.append("choice market continue button should resume the run")
+			match str(chosen_offer.get("kind", "")):
+				"weapon":
+					if _weapon_count(chosen_id) <= before_weapon_count and _weapon_tier_total(chosen_id) <= before_weapon_tier_total:
+						failures.append("choice market should grant the confirmed weapon")
+				"item":
+					if _item_count(chosen_id) <= before_item_count:
+						failures.append("choice market should grant the confirmed item")
+				"skill":
+					if int(_game_state_dictionary("skill_stacks").get(chosen_id, 0)) <= before_skill_stack:
+						failures.append("choice market should apply the confirmed stat offer")
 	game_state.stones = 50
 	arena._open_spirit_shop()
 	await process_frame
@@ -166,3 +194,50 @@ func _find_button_by_text(root: Node, text: String) -> Button:
 		if found != null:
 			return found
 	return null
+
+func _find_market_offer_buttons(root: Node) -> Array:
+	var buttons := []
+	for child in root.get_children():
+		if child is Button and child.has_meta("market_offer_id"):
+			buttons.append(child as Button)
+		buttons.append_array(_find_market_offer_buttons(child))
+	return buttons
+
+func _weapon_count(weapon_id: String) -> int:
+	var count := 0
+	for weapon in _game_state_array("active_weapons"):
+		if str(weapon.get("id", "")) == weapon_id:
+			count += 1
+	for weapon in _game_state_array("weapon_reserve"):
+		if str(weapon.get("id", "")) == weapon_id:
+			count += 1
+	return count
+
+func _weapon_tier_total(weapon_id: String) -> int:
+	var total := 0
+	for weapon in _game_state_array("active_weapons"):
+		if str(weapon.get("id", "")) == weapon_id:
+			total += int(weapon.get("tier", 1))
+	for weapon in _game_state_array("weapon_reserve"):
+		if str(weapon.get("id", "")) == weapon_id:
+			total += int(weapon.get("tier", 1))
+	return total
+
+func _item_count(item_id: String) -> int:
+	var count := 0
+	for item in _game_state_array("bag"):
+		if str(item.get("id", "")) == item_id:
+			count += 1
+	return count
+
+func _game_state_array(property_name: String) -> Array:
+	var value = game_state.get(property_name)
+	if value is Array:
+		return value
+	return []
+
+func _game_state_dictionary(property_name: String) -> Dictionary:
+	var value = game_state.get(property_name)
+	if value is Dictionary:
+		return value
+	return {}

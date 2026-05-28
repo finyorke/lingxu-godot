@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://tests/on_hit_verify.gd" id="1_onhit"]
+[ext_resource type="Script" path="res://tests/on_hit_verify_scene.gd" id="1_onhit"]
 
 [node name="OnHitVerify" type="Node"]
 script = ExtResource("1_onhit")
