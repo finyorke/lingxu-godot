@@ -25,6 +25,8 @@ const HUD_STAT_DEFS := [
 	{"key": "luck", "label": "气运", "icon": "offer_lucky_coin"}
 ]
 const OFFER_CARD_SIZE := Vector2(320, 492)
+const OFFER_CARD_BODY_SIZE := Vector2(320, 448)
+const OFFER_LOCK_BUTTON_HEIGHT := 38.0
 const OFFER_EFFECT_ROW_LIMIT := 4
 const WEAPON_FEEDBACK_Z := 18
 const WEAPON_HIT_FEEDBACK_DURATION := 0.22
@@ -75,6 +77,10 @@ var market_offers: Array = []
 var market_notice_text := ""
 var market_choice_completed := false
 var market_selected_offer_id := ""
+var market_selected_offer_key := ""
+var market_reroll_count := 0
+var choice_locked_offers: Array = []
+var shop_locked_offers: Array = []
 var next_spirit_shop_time := 60.0
 var weapon_drag_source := {}
 var suppress_next_weapon_detail := false
@@ -1699,7 +1705,9 @@ func _open_market(reason: String) -> void:
 	market_notice_text = "择一道机缘，整备完成后继续历练。"
 	market_choice_completed = false
 	market_selected_offer_id = ""
-	market_offers = _roll_offers(4, false)
+	market_selected_offer_key = ""
+	market_reroll_count = 0
+	market_offers = _make_market_offers(_market_offer_count(), false)
 	_render_market()
 
 func _open_spirit_shop() -> void:
@@ -1711,7 +1719,9 @@ func _open_spirit_shop() -> void:
 	market_notice_text = "可用拾取的灵石购买法器、道具和数值提升。"
 	market_choice_completed = false
 	market_selected_offer_id = ""
-	market_offers = _roll_offers(4, true)
+	market_selected_offer_key = ""
+	market_reroll_count = 0
+	market_offers = _make_market_offers(_market_offer_count(), true)
 	_render_market()
 
 func _render_market() -> void:
@@ -1755,14 +1765,17 @@ func _render_market() -> void:
 	stone_label.add_theme_font_size_override("font_size", 22)
 	stone_label.add_theme_color_override("font_color", Color("#fff4b8"))
 	header.add_child(stone_label)
-	if market_mode == "spirit_shop":
+	if market_mode == "choice" or market_mode == "spirit_shop":
 		var refresh := Button.new()
-		refresh.text = "刷新 %d" % _reroll_cost()
+		refresh.text = "刷新 免费" if _current_reroll_cost() == 0 else "刷新 %d" % _current_reroll_cost()
 		refresh.custom_minimum_size = Vector2(112, 44)
 		refresh.focus_mode = Control.FOCUS_NONE
 		refresh.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		refresh.disabled = market_mode == "choice" and market_choice_completed
+		refresh.tooltip_text = "已择一道机缘，确认后继续" if refresh.disabled else "锁定的机缘不会被刷新替换"
 		refresh.pressed.connect(_refresh_spirit_shop)
 		header.add_child(refresh)
+	if market_mode == "spirit_shop":
 		var close := Button.new()
 		close.text = "离开"
 		close.custom_minimum_size = Vector2(86, 44)
@@ -1784,7 +1797,13 @@ func _render_market() -> void:
 	box.add_child(offer_area)
 	offer_area.add_child(cards)
 	for offer in market_offers:
-		cards.add_child(_offer_button(offer))
+		var card := _offer_card_control(offer)
+		cards.add_child(card)
+		if bool(offer.get("fade_in", false)):
+			card.modulate.a = 0.0
+			var fade := create_tween()
+			fade.tween_property(card, "modulate:a", 1.0, 0.22)
+			offer.erase("fade_in")
 	offer_area.add_child(_market_stat_panel())
 	box.add_child(_market_inventory_panel())
 	SignalsBus.market_offered.emit(market_offers)
@@ -1794,6 +1813,7 @@ func _close_market() -> void:
 	market_notice_text = ""
 	market_choice_completed = false
 	market_selected_offer_id = ""
+	market_selected_offer_key = ""
 	_clear_detail()
 	overlay_layer.queue_free()
 	overlay_layer = CanvasLayer.new()
@@ -1801,19 +1821,181 @@ func _close_market() -> void:
 	_update_hud()
 
 func _refresh_spirit_shop() -> void:
-	var cost := _reroll_cost()
+	if market_mode == "choice" and market_choice_completed:
+		_show_notice("已择一道机缘，其他机缘可锁定到下次。")
+		return
+	var cost := _current_reroll_cost()
 	if GameState.stones < cost:
 		_show_notice("灵石不足，无法刷新")
 		return
-	GameState.stones -= cost
-	market_notice_text = "已刷新商品。"
-	market_offers = _roll_offers(4, true)
+	if cost > 0:
+		GameState.stones -= cost
+	market_reroll_count += 1
+	market_choice_completed = false
+	market_selected_offer_id = ""
+	market_selected_offer_key = ""
+	market_notice_text = "已免费刷新，锁定机缘保留。" if cost == 0 else "已花费%d灵石刷新，锁定机缘保留。" % cost
+	market_offers = _make_market_offers(_market_offer_count(), market_mode == "spirit_shop")
 	_render_market()
+	_update_hud()
+
+func _market_offer_count() -> int:
+	return int(ConfigDB.table("market").get("base_offer_count", 4))
 
 func _reroll_cost() -> int:
 	return int(ConfigDB.table("market").get("reroll_cost", 8))
 
-func _roll_offers(count: int, paid_shop := false) -> Array:
+func _current_reroll_cost() -> int:
+	if market_mode == "choice" and market_reroll_count == 0:
+		return 0
+	return _reroll_cost()
+
+func _make_market_offers(count: int, paid_shop := false) -> Array:
+	var result: Array = []
+	var excluded := {}
+	_ensure_lock_store_size(_current_lock_store(), count)
+	for i in range(count):
+		var locked := _locked_offer_at(i)
+		if locked.is_empty():
+			result.append({})
+			continue
+		var offer := _prepare_offer_for_market(locked, paid_shop, true)
+		result.append(offer)
+		excluded[_offer_identity(offer)] = true
+	var fresh_offers := _roll_offers(count, paid_shop, excluded)
+	var fresh_index := 0
+	for i in range(result.size()):
+		var existing: Dictionary = result[i]
+		if not existing.is_empty():
+			continue
+		if fresh_index >= fresh_offers.size():
+			continue
+		result[i] = fresh_offers[fresh_index]
+		fresh_index += 1
+	var filled: Array = []
+	for offer in result:
+		var offer_dict: Dictionary = offer
+		if not offer_dict.is_empty():
+			filled.append(offer_dict)
+	return filled
+
+func _prepare_offer_for_market(offer: Dictionary, paid_shop := false, locked := false) -> Dictionary:
+	var prepared := offer.duplicate(true)
+	prepared.erase("fade_in")
+	if paid_shop:
+		prepared["price"] = _offer_price(prepared)
+	else:
+		prepared.erase("price")
+	prepared["locked"] = locked
+	return prepared
+
+func _current_lock_store() -> Array:
+	if market_mode == "spirit_shop":
+		return shop_locked_offers
+	return choice_locked_offers
+
+func _ensure_lock_store_size(store: Array, count: int) -> void:
+	while store.size() < count:
+		store.append({})
+	if store.size() > count:
+		store.resize(count)
+
+func _locked_offer_at(index: int) -> Dictionary:
+	var store := _current_lock_store()
+	if index < 0 or index >= store.size():
+		return {}
+	var locked: Dictionary = store[index]
+	return locked
+
+func _set_locked_offer_at(index: int, offer: Dictionary) -> void:
+	var store := _current_lock_store()
+	_ensure_lock_store_size(store, _market_offer_count())
+	if index < 0 or index >= store.size():
+		return
+	var locked := offer.duplicate(true)
+	locked.erase("locked")
+	locked.erase("fade_in")
+	locked.erase("price")
+	store[index] = locked
+
+func _clear_locked_offer_at(index: int) -> void:
+	var store := _current_lock_store()
+	_ensure_lock_store_size(store, _market_offer_count())
+	if index >= 0 and index < store.size():
+		store[index] = {}
+
+func _clear_locked_offer(offer: Dictionary) -> void:
+	var identity := _offer_identity(offer)
+	if identity.is_empty():
+		return
+	var store := _current_lock_store()
+	for i in range(store.size()):
+		var locked: Dictionary = store[i]
+		if _offer_identity(locked) == identity:
+			store[i] = {}
+
+func _offer_key(offer: Dictionary) -> String:
+	if offer.is_empty():
+		return ""
+	var data: Dictionary = offer.get("data", {})
+	var tier := int(offer.get("tier", data.get("tier", 0)))
+	return "%s:%s:%d" % [str(offer.get("kind", "")), str(offer.get("id", "")), tier]
+
+func _offer_identity(offer: Dictionary) -> String:
+	if offer.is_empty():
+		return ""
+	return "%s:%s" % [str(offer.get("kind", "")), str(offer.get("id", ""))]
+
+func _market_offer_index_by_key(key: String) -> int:
+	for i in range(market_offers.size()):
+		var offer: Dictionary = market_offers[i]
+		if _offer_key(offer) == key:
+			return i
+	return -1
+
+func _current_offer_identity_set() -> Dictionary:
+	var excluded := {}
+	for offer in market_offers:
+		var offer_dict: Dictionary = offer
+		var identity := _offer_identity(offer_dict)
+		if not identity.is_empty():
+			excluded[identity] = true
+	return excluded
+
+func _roll_replacement_offer(paid_shop := false) -> Dictionary:
+	var offers := _roll_offers(1, paid_shop, _current_offer_identity_set())
+	if offers.is_empty():
+		return {}
+	var replacement: Dictionary = offers[0]
+	replacement["fade_in"] = true
+	return replacement
+
+func _is_selected_offer(offer: Dictionary) -> bool:
+	if market_mode != "choice" or not market_choice_completed:
+		return false
+	if not market_selected_offer_key.is_empty():
+		return _offer_key(offer) == market_selected_offer_key
+	return str(offer.get("id", "")) == market_selected_offer_id
+
+func _toggle_offer_lock(offer_key: String) -> void:
+	var index := _market_offer_index_by_key(offer_key)
+	if index < 0:
+		return
+	var offer: Dictionary = market_offers[index]
+	if _is_selected_offer(offer):
+		_show_notice("已选择的机缘会在确认后获得，不能锁定。")
+		return
+	if bool(offer.get("locked", false)):
+		_clear_locked_offer_at(index)
+		offer["locked"] = false
+		market_notice_text = "已取消锁定%s。" % str(offer.get("name", offer.get("id", "")))
+	else:
+		_set_locked_offer_at(index, offer)
+		offer["locked"] = true
+		market_notice_text = "已锁定%s，下次仍会出现。" % str(offer.get("name", offer.get("id", "")))
+	_render_market()
+
+func _roll_offers(count: int, paid_shop := false, excluded := {}) -> Array:
 	var result: Array = []
 	var pool: Array = []
 	for id in GameState.filtered_ids("weapons"):
@@ -1842,13 +2024,14 @@ func _roll_offers(count: int, paid_shop := false) -> Array:
 			skill_offer["price"] = _offer_price(skill_offer)
 		pool.append(skill_offer)
 	pool.shuffle()
-	var seen := {}
+	var seen: Dictionary = excluded.duplicate()
 	for offer in pool:
 		if result.size() >= count:
 			break
-		if seen.has(offer["id"]):
+		var identity := _offer_identity(offer)
+		if seen.has(identity):
 			continue
-		seen[offer["id"]] = true
+		seen[identity] = true
 		result.append(offer)
 	return result
 
@@ -1877,6 +2060,33 @@ func _roll_weapon_tier() -> int:
 			return tier
 	return 1
 
+func _offer_card_control(offer: Dictionary) -> Control:
+	var wrapper := VBoxContainer.new()
+	wrapper.custom_minimum_size = OFFER_CARD_SIZE
+	wrapper.add_theme_constant_override("separation", 6)
+	var card := _offer_button(offer)
+	wrapper.add_child(card)
+	var lock := Button.new()
+	lock.name = "MarketOfferLockButton"
+	lock.custom_minimum_size = Vector2(OFFER_CARD_SIZE.x, OFFER_LOCK_BUTTON_HEIGHT)
+	lock.focus_mode = Control.FOCUS_NONE
+	lock.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	lock.set_meta("market_lock_offer_key", _offer_key(offer))
+	if _is_selected_offer(offer):
+		lock.text = "已选择"
+		lock.disabled = true
+		lock.tooltip_text = "已选择的机缘会在确认后获得"
+	elif bool(offer.get("locked", false)):
+		lock.text = "已锁定"
+		lock.tooltip_text = "点击取消锁定"
+	else:
+		lock.text = "锁定"
+		lock.tooltip_text = "锁定后下次仍会出现在这个位置"
+	var offer_key := _offer_key(offer)
+	lock.pressed.connect(func(): _toggle_offer_lock(offer_key))
+	wrapper.add_child(lock)
+	return wrapper
+
 func _offer_button(offer: Dictionary) -> Button:
 	var kind_id := str(offer.get("kind", ""))
 	var data: Dictionary = offer.get("data", {})
@@ -1892,15 +2102,18 @@ func _offer_button(offer: Dictionary) -> Button:
 		normal_bg = normal_bg.lerp(tier_color, 0.18)
 		normal_border = Color(tier_color.r, tier_color.g, tier_color.b, 0.82)
 	var choice_has_selection := market_mode == "choice" and market_choice_completed
-	var selected := choice_has_selection and str(offer.get("id", "")) == market_selected_offer_id
+	var selected := _is_selected_offer(offer)
 	if selected:
 		normal_bg = normal_bg.lerp(Color("#e8b259"), 0.18)
 		normal_border = Color("#ffe9a8")
+	elif bool(offer.get("locked", false)):
+		normal_border = Color("#fff4b8")
 	var b := Button.new()
-	b.custom_minimum_size = OFFER_CARD_SIZE
+	b.custom_minimum_size = OFFER_CARD_BODY_SIZE
 	b.text = ""
 	b.focus_mode = Control.FOCUS_NONE
 	b.set_meta("market_offer_id", str(offer.get("id", "")))
+	b.set_meta("market_offer_key", _offer_key(offer))
 	b.set_meta("market_offer_kind", kind_id)
 	b.add_theme_stylebox_override("normal", _stylebox(normal_bg, normal_border, 2 if kind_id == "weapon" else 1, 6))
 	b.add_theme_stylebox_override("hover", _stylebox(Color(0.045, 0.072, 0.076, 0.98).lerp(tier_color, 0.15 if kind_id == "weapon" else 0.0), Color("#e8b259"), 2, 6))
@@ -1910,16 +2123,22 @@ func _offer_button(offer: Dictionary) -> Button:
 	else:
 		b.add_theme_stylebox_override("disabled", _stylebox(Color(0.02, 0.024, 0.026, 0.82), Color(0.36, 0.38, 0.38, 0.42), 1, 6))
 	if choice_has_selection:
-		if not block_reason.is_empty():
+		b.disabled = true
+		if selected:
+			b.tooltip_text = "已选择此机缘，点击继续历练确认"
+		elif not block_reason.is_empty():
 			b.modulate = Color(0.76, 0.78, 0.75, 1.0)
 			b.tooltip_text = block_reason
 		else:
-			b.tooltip_text = "已选择此机缘，点击其他机缘可更换" if selected else "点击改选此机缘"
+			b.modulate = Color(0.72, 0.74, 0.72, 1.0)
+			b.tooltip_text = "已择一道机缘，可锁定此机缘留到下次"
 	elif not block_reason.is_empty():
 		b.modulate = Color(0.76, 0.78, 0.75, 1.0)
 		b.tooltip_text = block_reason
 	elif kind_id == "weapon" and not merge_target.is_empty():
 		b.tooltip_text = "选择后合成已有同名同品法器，不占用空槽"
+	elif bool(offer.get("locked", false)):
+		b.tooltip_text = "已锁定，刷新时不会替换"
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1933,7 +2152,7 @@ func _offer_button(offer: Dictionary) -> Button:
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(box)
 	var art_panel := PanelContainer.new()
-	art_panel.custom_minimum_size = Vector2(0, 154)
+	art_panel.custom_minimum_size = Vector2(0, 126)
 	art_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.012, 0.025, 0.028, 0.98), _element_color(str(data.get("element", ""))), 2, 5))
 	box.add_child(art_panel)
@@ -2314,6 +2533,9 @@ func _element_color(element: String) -> Color:
 			return Color("#5fe0c8")
 
 func _choose_offer(offer: Dictionary) -> void:
+	if market_mode == "choice" and market_choice_completed:
+		_show_notice("已择一道机缘，其他机缘只能锁定到下次。")
+		return
 	var block_reason := _offer_block_reason(offer)
 	if not block_reason.is_empty():
 		_show_notice(block_reason)
@@ -2324,7 +2546,8 @@ func _choose_offer(offer: Dictionary) -> void:
 	if market_mode == "choice":
 		market_choice_completed = true
 		market_selected_offer_id = str(offer.get("id", ""))
-		market_notice_text = "已选择%s，可改选其他机缘或点击继续历练确认。" % str(offer.get("name", offer.get("id", "")))
+		market_selected_offer_key = _offer_key(offer)
+		market_notice_text = "已选择%s，其他机缘可锁定到下次。" % str(offer.get("name", offer.get("id", "")))
 		_render_market()
 		return
 
@@ -2340,19 +2563,25 @@ func _confirm_market_choice() -> void:
 		_show_notice("已选机缘不存在，请重新选择")
 		market_choice_completed = false
 		market_selected_offer_id = ""
+		market_selected_offer_key = ""
 		_render_market()
 		return
 	if not _grant_market_offer(offer, "槽位已满或数值已达上限"):
 		return
 	var offer_name := str(offer.get("name", offer.get("id", "")))
 	SignalsBus.market_choice.emit(offer["id"])
+	_clear_locked_offer(offer)
 	_close_market()
 	_show_notice("已得%s，继续历练。" % offer_name)
 
 func _selected_market_offer() -> Dictionary:
 	for offer in market_offers:
-		if str(offer.get("id", "")) == market_selected_offer_id:
-			return offer
+		var offer_dict: Dictionary = offer
+		if not market_selected_offer_key.is_empty():
+			if _offer_key(offer_dict) == market_selected_offer_key:
+				return offer_dict
+		elif str(offer_dict.get("id", "")) == market_selected_offer_id:
+			return offer_dict
 	return {}
 
 func _grant_market_offer(offer: Dictionary, failure_text: String) -> bool:
@@ -2380,12 +2609,21 @@ func _buy_shop_offer(offer: Dictionary) -> void:
 	if GameState.stones < price:
 		_show_notice("灵石不足，不能购买")
 		return
+	var slot_index := _market_offer_index_by_key(_offer_key(offer))
 	if not _grant_market_offer(offer, "槽位已满或数值已达上限，先整理后再购买"):
 		return
 	GameState.stones -= price
 	SignalsBus.market_choice.emit(offer["id"])
 	market_notice_text = "购买了 %s。" % str(offer.get("name", offer.get("id", "")))
-	market_offers = _roll_offers(4, true)
+	if slot_index >= 0 and slot_index < market_offers.size():
+		_clear_locked_offer_at(slot_index)
+		var replacement := _roll_replacement_offer(true)
+		if replacement.is_empty():
+			market_offers.remove_at(slot_index)
+		else:
+			market_offers[slot_index] = replacement
+	else:
+		market_offers = _make_market_offers(_market_offer_count(), true)
 	_render_market()
 	_update_hud()
 
