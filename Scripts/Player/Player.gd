@@ -195,7 +195,7 @@ func _update_visual(delta: float) -> void:
 	sprite.rotation = lean + swing
 	var squash: float = step * 0.035 * motion_amount
 	sprite.scale = Vector2(base_sprite_scale.x * (1.0 + squash), base_sprite_scale.y * (1.0 - squash * 0.75))
-	sprite.flip_h = facing.x < -0.1
+	sprite.flip_h = facing.x > 0.1
 	shadow.position = Vector2(0, 19.0 + lift * 2.0)
 	shadow.scale = Vector2(1.0 + lift * 0.16 * motion_amount, 1.0 - lift * 0.08)
 	shadow.color = Color(0, 0, 0, 0.18 + min(motion_amount, 1.0) * 0.06 + lift * 0.035)
