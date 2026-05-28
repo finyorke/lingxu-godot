@@ -26,6 +26,9 @@ const HUD_STAT_DEFS := [
 ]
 const OFFER_CARD_SIZE := Vector2(320, 492)
 const OFFER_EFFECT_ROW_LIMIT := 4
+const WEAPON_FEEDBACK_Z := 18
+const WEAPON_HIT_FEEDBACK_DURATION := 0.22
+const WEAPON_CAST_FEEDBACK_DURATION := 0.34
 
 var player: YunxiPlayer
 var enemies: Array = []
@@ -404,17 +407,17 @@ func _fire_weapon(weapon: Dictionary, slot_index := -1) -> void:
 				var tier_mult := GameState.weapon_tier_multiplier(int(weapon.get("tier", 1)))
 				shield_gain += (8.0 + float(GameState.stats.get("engineering", 0.0))) * scale_eng * tier_mult
 		_add_player_shield(shield_gain)
-		_spawn_fx(player.global_position, "fx_water", 0.25)
+		_spawn_shield_feedback(weapon, player.global_position, shield_gain)
 		return
 	if klass == "orbit" or klass == "aura":
 		_play_weapon_release(weapon, slot_index, player.global_position + player.facing * 80.0)
-		var range := float(weapon.get("range", 180)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
+		var hit_range := float(weapon.get("range", 180)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
 		var hit_limit := -1
 		if klass == "orbit":
 			hit_limit = max(2, int(weapon.get("tier", 1)) + 2)
-		for enemy in _enemies_in_radius(player.global_position, range, hit_limit, true):
+		_spawn_orbit_feedback(weapon, player.global_position, hit_range, klass)
+		for enemy in _enemies_in_radius(player.global_position, hit_range, hit_limit, true):
 			_hit_enemy(weapon, enemy)
-		_spawn_fx(player.global_position, "fx_%s" % weapon.get("element", "metal"), 0.2)
 		return
 	var target := _select_target(weapon)
 	if target == null:
@@ -423,29 +426,37 @@ func _fire_weapon(weapon: Dictionary, slot_index := -1) -> void:
 	_play_weapon_release(weapon, slot_index, target_pos)
 	if klass == "area":
 		var radius := float(weapon.get("radius", 110)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
+		_spawn_area_feedback(weapon, target_pos, radius, "area")
 		_hit_area_weapon(weapon, target_pos, radius)
 		return
 	if klass == "talisman":
 		var radius := float(weapon.get("radius", 88)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
+		_spawn_area_feedback(weapon, target_pos, radius, "talisman")
 		_hit_area_weapon(weapon, target_pos, radius, 5)
 		return
 	if klass == "dash_blade":
+		_spawn_line_feedback(weapon, origin, target_pos, 34.0, "dash")
 		_hit_line_weapon(weapon, origin, target_pos, 42.0, int(weapon.get("pierce", 1)) + 1)
 		return
 	if klass == "hammer":
 		var radius := float(weapon.get("radius", 86)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
+		_spawn_slam_feedback(weapon, origin, target_pos, radius)
 		_hit_area_weapon(weapon, target_pos, radius, 4)
 		return
 	if klass == "spike":
+		_spawn_spike_feedback(weapon, origin, target_pos)
 		_hit_line_weapon(weapon, origin, target_pos, 34.0, int(weapon.get("pierce", 2)) + 1)
 		return
 	if klass == "needle":
+		_spawn_fan_feedback(weapon, origin, target_pos, 4, 0.12)
 		_fire_spread_projectiles(weapon, origin, target_pos, 4, 0.12, 0.46, {"hit_radius": 12.0, "visual_scale": 0.085, "proj_speed": float(weapon.get("proj_speed", 720.0)) * 1.08})
 		return
 	if klass == "thorn":
+		_spawn_fan_feedback(weapon, origin, target_pos, 3, 0.20)
 		_fire_spread_projectiles(weapon, origin, target_pos, 3, 0.20, 0.68, {"hit_radius": 16.0, "visual_scale": 0.105})
 		return
 	if klass == "summon":
+		_spawn_summon_feedback(weapon, origin, target.global_position)
 		_fire_summon_projectiles(weapon, origin, target)
 		return
 	var projectile: LingxuProjectile = PROJECTILE_SCENE.instantiate()
@@ -476,7 +487,6 @@ func _spawn_weapon_projectile(weapon: Dictionary, origin: Vector2, target_pos: V
 func _hit_area_weapon(weapon: Dictionary, center: Vector2, radius: float, max_hits := -1) -> void:
 	for enemy in _enemies_in_radius(center, radius, max_hits, true):
 		_hit_enemy(weapon, enemy, center)
-	_spawn_fx(center, "fx_%s" % weapon.get("element", "metal"), 0.32)
 
 func _hit_line_weapon(weapon: Dictionary, origin: Vector2, target_pos: Vector2, width: float, max_hits: int) -> void:
 	var dir: Vector2 = target_pos - origin
@@ -503,7 +513,6 @@ func _hit_line_weapon(weapon: Dictionary, origin: Vector2, target_pos: Vector2, 
 			break
 		var enemy: LingxuEnemy = candidate["enemy"]
 		_hit_enemy(weapon, enemy, enemy.global_position)
-		_spawn_fx(enemy.global_position, "fx_%s" % weapon.get("element", "metal"), 0.16)
 		hits += 1
 
 func _fire_spread_projectiles(weapon: Dictionary, origin: Vector2, target_pos: Vector2, count: int, spread: float, damage_mult: float, overrides := {}) -> void:
@@ -515,8 +524,8 @@ func _fire_spread_projectiles(weapon: Dictionary, origin: Vector2, target_pos: V
 
 func _fire_summon_projectiles(weapon: Dictionary, origin: Vector2, primary: LingxuEnemy) -> void:
 	var count := 2 + clampi(int(weapon.get("tier", 1)), 1, 4)
-	var range := float(weapon.get("range", 420)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
-	var targets := _enemies_in_radius(player.global_position, range, count, true)
+	var hit_range := float(weapon.get("range", 420)) * (1.0 + float(GameState.stats.get("range_pct", 0.0)))
+	var targets := _enemies_in_radius(player.global_position, hit_range, count, true)
 	for i in range(count):
 		var target_pos := primary.global_position
 		if not targets.is_empty():
@@ -524,6 +533,7 @@ func _fire_summon_projectiles(weapon: Dictionary, origin: Vector2, primary: Ling
 			target_pos = summon_target.global_position
 		var angle := float(i) / float(count) * TAU
 		var shot_origin := origin + Vector2.RIGHT.rotated(angle) * 22.0
+		_spawn_summon_gate_feedback(weapon, shot_origin, target_pos, i)
 		var shot := _weapon_variant(weapon, 0.42, {"hit_radius": 15.0, "visual_scale": 0.095, "proj_speed": float(weapon.get("proj_speed", 560.0)) * rng.randf_range(0.92, 1.12)})
 		_spawn_weapon_projectile(shot, shot_origin, target_pos)
 
@@ -588,6 +598,7 @@ func _hit_enemy(weapon: Dictionary, enemy: LingxuEnemy, hit_pos := Vector2.ZERO,
 	enemy.take_damage(float(result["amount"]), bool(result["is_crit"]), str(result["element"]))
 	player.heal_from_lifesteal(float(result["amount"]))
 	_apply_weapon_on_hit(weapon, enemy, target_pos, result, allow_secondary)
+	_spawn_weapon_hit_feedback(weapon, target_pos, result, not allow_secondary)
 	SignalsBus.hud_request_hitstop.emit(0.02)
 	return result
 
@@ -602,30 +613,39 @@ func _apply_weapon_on_hit(weapon: Dictionary, enemy: LingxuEnemy, hit_pos: Vecto
 			"poison", "bleed", "ignite":
 				if is_instance_valid(enemy):
 					enemy.add_dot(kind, element, float(effect.get("dps", 3.0)), float(effect.get("dur", 2.5)), bool(effect.get("stack", false)))
+					_spawn_status_feedback(weapon, hit_pos, kind, element)
 			"slow":
 				if is_instance_valid(enemy):
 					enemy.apply_slow(float(effect.get("value", 0.22)), float(effect.get("dur", 1.5)))
+					_spawn_status_feedback(weapon, hit_pos, kind, element)
 			"chill_stack":
 				if is_instance_valid(enemy):
 					enemy.add_chill_stack(int(effect.get("stacks", 5)), float(effect.get("freeze_dur", 0.8)))
+					_spawn_status_feedback(weapon, hit_pos, kind, element)
 			"freeze":
 				if is_instance_valid(enemy):
 					enemy.apply_freeze(float(effect.get("dur", 1.0)))
+					_spawn_status_feedback(weapon, hit_pos, kind, element)
 			"petrify":
 				if is_instance_valid(enemy):
 					enemy.apply_petrify(float(effect.get("dur", 1.0)))
+					_spawn_status_feedback(weapon, hit_pos, kind, element)
 			"root":
 				if is_instance_valid(enemy):
 					enemy.apply_root(float(effect.get("dur", 0.6)))
+					_spawn_status_feedback(weapon, hit_pos, kind, element)
 			"stagger":
 				if is_instance_valid(enemy):
 					enemy.apply_root(float(effect.get("dur", 0.22)))
+					_spawn_status_feedback(weapon, hit_pos, kind, element)
 			"blind":
 				if is_instance_valid(enemy):
 					enemy.apply_slow(0.35, float(effect.get("dur", 1.2)))
+					_spawn_status_feedback(weapon, hit_pos, kind, element)
 			"vulnerable", "execute_setup":
 				if is_instance_valid(enemy):
 					enemy.apply_vulnerable(float(effect.get("value", 0.14)), float(effect.get("dur", 2.0)))
+					_spawn_status_feedback(weapon, hit_pos, kind, element)
 			"ignore_armor":
 				if is_instance_valid(enemy):
 					enemy.apply_vulnerable(float(effect.get("value", 0.12)), float(effect.get("dur", 2.2)))
@@ -633,41 +653,48 @@ func _apply_weapon_on_hit(weapon: Dictionary, enemy: LingxuEnemy, hit_pos: Vecto
 			"knockback":
 				if is_instance_valid(enemy):
 					enemy.apply_knockback(player.global_position, float(effect.get("value", 20.0)))
+					_spawn_status_feedback(weapon, hit_pos, kind, element)
 			"pull":
 				if is_instance_valid(enemy):
 					enemy.apply_pull(player.global_position, float(effect.get("value", 18.0)))
+					_spawn_status_feedback(weapon, hit_pos, kind, element)
 			"quake":
 				if allow_secondary:
 					var radius := float(effect.get("radius", GameState.stats.get("quake_radius", weapon.get("radius", 120))))
+					_spawn_area_feedback(weapon, hit_pos, radius, "quake")
 					_secondary_aoe(weapon, hit_pos, radius, 0.38, element, false, true)
-					_spawn_fx(hit_pos, "fx_earth", 0.22)
 			"explode":
 				if allow_secondary:
 					var radius := float(effect.get("radius", weapon.get("radius", 115))) * 0.85
+					_spawn_area_feedback(weapon, hit_pos, radius, "explode")
 					_secondary_aoe(weapon, hit_pos, radius, float(effect.get("damage_mult", 0.42)), element, true, false)
-					_spawn_fx(hit_pos, "fx_fire", 0.22)
 			"ignite_nova":
 				if allow_secondary:
-					_secondary_status_wave("ignite", element, hit_pos, float(effect.get("radius", 230.0)), float(effect.get("dps", 6.0)), float(effect.get("dur", 3.0)), true)
-					_spawn_fx(hit_pos, "fx_fire", 0.34)
+					var radius := float(effect.get("radius", 230.0))
+					_spawn_area_feedback(weapon, hit_pos, radius, "nova")
+					_secondary_status_wave("ignite", element, hit_pos, radius, float(effect.get("dps", 6.0)), float(effect.get("dur", 3.0)), true)
 			"poison_burst":
 				if allow_secondary:
-					_secondary_status_wave("poison", element, hit_pos, float(effect.get("radius", 210.0)), float(effect.get("dps", 7.0)), float(effect.get("dur", 4.0)), true)
-					_spawn_fx(hit_pos, "fx_wood", 0.34)
+					var radius := float(effect.get("radius", 210.0))
+					_spawn_area_feedback(weapon, hit_pos, radius, "poison_burst")
+					_secondary_status_wave("poison", element, hit_pos, radius, float(effect.get("dps", 7.0)), float(effect.get("dur", 4.0)), true)
 			"shield_splash":
 				_add_player_shield(float(effect.get("value", 1.0)) + float(GameState.stats.get("engineering", 0.0)) * 0.15)
+				_spawn_shield_feedback(weapon, player.global_position, float(effect.get("value", 1.0)))
 			"armor_up":
 				_add_player_shield(2.0 + float(effect.get("value", 1.0)) * 2.0)
+				_spawn_shield_feedback(weapon, player.global_position, float(effect.get("value", 1.0)))
 			"taunt":
 				if is_instance_valid(enemy):
 					enemy.apply_root(float(effect.get("dur", 0.35)))
+					_spawn_status_feedback(weapon, hit_pos, kind, element)
 			"split_chance":
 				if allow_secondary and rng.randf() < float(effect.get("value", 0.1)):
 					var split_target := _find_split_target(hit_pos, enemy, float(effect.get("radius", 260.0)))
 					if split_target != null:
 						var split_weapon := _make_secondary_weapon(weapon, 0.45, element)
+						_spawn_line_feedback(weapon, hit_pos, split_target.global_position, 8.0, "split")
 						_hit_enemy(split_weapon, split_target, split_target.global_position, false)
-						_spawn_fx(split_target.global_position, "fx_slash", 0.16)
 			_:
 				pass
 
@@ -842,6 +869,355 @@ func _spawn_fx(pos: Vector2, id: String, duration: float) -> void:
 	tween.tween_property(fx, "scale", Vector2(0.42, 0.42), duration)
 	tween.parallel().tween_property(fx, "modulate:a", 0.0, duration)
 	tween.tween_callback(fx.queue_free)
+
+func _spawn_weapon_hit_feedback(weapon: Dictionary, pos: Vector2, result: Dictionary, secondary := false) -> void:
+	var element := str(result.get("element", weapon.get("element", "metal")))
+	var color := AssetDB.color_for_element(element)
+	var root := _feedback_root("WeaponHit_%s" % str(weapon.get("id", weapon.get("name", "weapon"))), pos, WEAPON_FEEDBACK_Z + 2)
+	var duration := WEAPON_HIT_FEEDBACK_DURATION * (0.72 if secondary else 1.0)
+	root.scale = Vector2.ONE * (0.78 if secondary else 1.0)
+	_add_feedback_fx(root, _weapon_feedback_fx_id(weapon, bool(result.get("is_crit", false))), Vector2.ZERO, 0.11 if secondary else 0.15, 0.72)
+	_add_feedback_ring(root, 14.0 if secondary else 21.0, color, 2.0 if secondary else 3.5, "SourceRing", 30)
+	var icon := _add_feedback_icon(root, weapon, Vector2(0, -20.0 if secondary else -27.0), 0.034 if secondary else 0.048, 0.9)
+	icon.rotation = -0.18
+	_add_hit_class_mark(root, str(weapon.get("class", "flying_sword")), color, secondary)
+	var tween := create_tween()
+	tween.tween_property(root, "scale", Vector2.ONE * (1.14 if secondary else 1.36), duration)
+	tween.parallel().tween_property(root, "modulate:a", 0.0, duration)
+	tween.tween_callback(root.queue_free)
+
+func _spawn_status_feedback(weapon: Dictionary, pos: Vector2, kind: String, element: String) -> void:
+	var color := _effect_feedback_color(kind, element)
+	var root := _feedback_root("WeaponStatus_%s_%s" % [kind, str(weapon.get("id", ""))], pos + Vector2(0, -18), WEAPON_FEEDBACK_Z + 3)
+	_add_feedback_fx(root, _effect_feedback_fx_id(kind, element), Vector2.ZERO, 0.095, 0.58)
+	_add_feedback_icon(root, weapon, Vector2(16, -10), 0.026, 0.82)
+	_add_feedback_ring(root, 12.0, color, 2.0, "StatusRing", 24)
+	var tween := create_tween()
+	tween.tween_property(root, "position", root.position + Vector2(0, -22), 0.3)
+	tween.parallel().tween_property(root, "modulate:a", 0.0, 0.3)
+	tween.tween_callback(root.queue_free)
+
+func _spawn_line_feedback(weapon: Dictionary, origin: Vector2, target_pos: Vector2, width: float, style: String) -> void:
+	var aim := target_pos - origin
+	if aim.length_squared() < 4.0:
+		return
+	var element := str(weapon.get("element", "metal"))
+	var color := AssetDB.color_for_element(element)
+	var duration := 0.2 if style == "split" else WEAPON_CAST_FEEDBACK_DURATION
+	var line := _add_world_line("WeaponPath_%s_%s" % [style, str(weapon.get("id", ""))], origin, target_pos, color, width, 0.58, duration)
+	if style == "dash":
+		var side := Vector2(-aim.y, aim.x).normalized()
+		_add_world_line("WeaponPath_dash_edge", origin + side * 13.0, target_pos + side * 13.0, color.lerp(Color.WHITE, 0.28), max(2.0, width * 0.24), 0.38, duration)
+		_add_world_line("WeaponPath_dash_edge", origin - side * 13.0, target_pos - side * 13.0, color.lerp(Color.WHITE, 0.28), max(2.0, width * 0.24), 0.38, duration)
+	elif style == "split":
+		line.width = max(3.0, width)
+	var icon := _world_feedback_icon(weapon, origin, 0.048, WEAPON_FEEDBACK_Z + 2)
+	icon.rotation = aim.angle()
+	var tween := create_tween()
+	tween.tween_property(icon, "global_position", target_pos, duration * 0.82)
+	tween.parallel().tween_property(icon, "scale", Vector2.ONE * 0.028, duration * 0.82)
+	tween.parallel().tween_property(icon, "modulate:a", 0.0, duration * 0.82)
+	tween.tween_callback(icon.queue_free)
+
+func _spawn_fan_feedback(weapon: Dictionary, origin: Vector2, target_pos: Vector2, count: int, spread: float) -> void:
+	var aim := target_pos - origin
+	if aim.length_squared() < 4.0:
+		return
+	var middle := float(count - 1) * 0.5
+	for i in range(count):
+		var offset := (float(i) - middle) * spread
+		var endpoint := origin + aim.rotated(offset)
+		_spawn_line_feedback(weapon, origin, endpoint, 5.0, "fan")
+
+func _spawn_area_feedback(weapon: Dictionary, center: Vector2, radius: float, style: String) -> void:
+	var element := str(weapon.get("element", "metal"))
+	var color := AssetDB.color_for_element(element)
+	var root := _feedback_root("WeaponArea_%s_%s" % [style, str(weapon.get("id", ""))], center, WEAPON_FEEDBACK_Z)
+	root.scale = Vector2.ONE * 0.16
+	var ring_width := 5.0 if style in ["explode", "quake", "nova", "poison_burst"] else 4.0
+	_add_feedback_ring(root, radius, color, ring_width, "AreaRing", 72)
+	if style == "talisman":
+		_add_feedback_square(root, radius * 0.62, color, 3.0)
+	elif style == "quake":
+		_add_feedback_spokes(root, radius, color, 8, 2.5)
+	elif style == "explode" or style == "nova":
+		_add_feedback_spokes(root, radius * 0.82, color.lerp(Color.WHITE, 0.2), 12, 3.0)
+	elif style == "poison_burst":
+		_add_feedback_spores(root, radius, color)
+	else:
+		_add_feedback_spokes(root, radius * 0.72, color, 5, 2.0)
+	_add_feedback_fx(root, _weapon_feedback_fx_id(weapon, false), Vector2.ZERO, clamp(radius / 760.0, 0.11, 0.24), 0.64)
+	_add_feedback_icon(root, weapon, Vector2(0, -min(radius * 0.34, 44.0)), 0.055, 0.92)
+	var duration := 0.46 if style in ["explode", "quake", "nova", "poison_burst"] else WEAPON_CAST_FEEDBACK_DURATION
+	var tween := create_tween()
+	tween.tween_property(root, "scale", Vector2.ONE, duration)
+	tween.parallel().tween_property(root, "modulate:a", 0.0, duration)
+	tween.tween_callback(root.queue_free)
+
+func _spawn_orbit_feedback(weapon: Dictionary, center: Vector2, radius: float, klass: String) -> void:
+	var element := str(weapon.get("element", "metal"))
+	var color := AssetDB.color_for_element(element)
+	var root := _feedback_root("WeaponOrbit_%s_%s" % [klass, str(weapon.get("id", ""))], center, WEAPON_FEEDBACK_Z)
+	_add_feedback_ring(root, radius, color, 4.0, "OrbitRing", 96)
+	if klass == "aura":
+		_add_feedback_ring(root, radius * 0.68, color.lerp(Color.WHITE, 0.18), 2.4, "AuraInnerRing", 80)
+		_add_feedback_fx(root, _weapon_feedback_fx_id(weapon, false), Vector2.ZERO, clamp(radius / 720.0, 0.12, 0.26), 0.46)
+	else:
+		for i in range(3):
+			var angle := float(i) / 3.0 * TAU + rng.randf_range(-0.18, 0.18)
+			var icon := _add_feedback_icon(root, weapon, Vector2(cos(angle), sin(angle)) * radius, 0.038, 0.86)
+			icon.rotation = angle + PI * 0.5
+	var tween := create_tween()
+	tween.tween_property(root, "rotation", root.rotation + (TAU * (0.35 if klass == "aura" else 0.75)), WEAPON_CAST_FEEDBACK_DURATION)
+	tween.parallel().tween_property(root, "scale", Vector2.ONE * (1.12 if klass == "aura" else 1.02), WEAPON_CAST_FEEDBACK_DURATION)
+	tween.parallel().tween_property(root, "modulate:a", 0.0, WEAPON_CAST_FEEDBACK_DURATION)
+	tween.tween_callback(root.queue_free)
+
+func _spawn_shield_feedback(weapon: Dictionary, center: Vector2, amount: float) -> void:
+	var color := AssetDB.color_for_element(str(weapon.get("element", "water"))).lerp(Color.WHITE, 0.16)
+	var root := _feedback_root("WeaponShield_%s" % str(weapon.get("id", "")), center, WEAPON_FEEDBACK_Z + 1)
+	var radius: float = 62.0 + minf(amount, 80.0) * 0.16
+	root.scale = Vector2.ONE * 0.7
+	_add_feedback_ring(root, radius, color, 5.0, "ShieldRing", 72)
+	_add_feedback_ring(root, radius * 0.68, color, 2.4, "ShieldInnerRing", 64)
+	_add_feedback_icon(root, weapon, Vector2(0, -radius * 0.34), 0.064, 0.94)
+	var tween := create_tween()
+	tween.tween_property(root, "scale", Vector2.ONE * 1.12, 0.38)
+	tween.parallel().tween_property(root, "modulate:a", 0.0, 0.38)
+	tween.tween_callback(root.queue_free)
+
+func _spawn_slam_feedback(weapon: Dictionary, origin: Vector2, target_pos: Vector2, radius: float) -> void:
+	_spawn_line_feedback(weapon, origin, target_pos, 12.0, "slam")
+	_spawn_area_feedback(weapon, target_pos, radius, "quake")
+
+func _spawn_spike_feedback(weapon: Dictionary, origin: Vector2, target_pos: Vector2) -> void:
+	var aim := target_pos - origin
+	if aim.length_squared() < 4.0:
+		return
+	var dir := aim.normalized()
+	var color := AssetDB.color_for_element(str(weapon.get("element", "earth")))
+	_spawn_line_feedback(weapon, origin, target_pos, 8.0, "spike")
+	for i in range(4):
+		var t := (float(i) + 0.65) / 4.6
+		var pos := origin.lerp(target_pos, t)
+		var spike := Polygon2D.new()
+		spike.name = "WeaponSpike_%s" % str(weapon.get("id", ""))
+		var points := PackedVector2Array()
+		points.append(Vector2(0, -20))
+		points.append(Vector2(-8, 8))
+		points.append(Vector2(8, 8))
+		spike.polygon = points
+		spike.color = Color(color.r, color.g, color.b, 0.66)
+		spike.global_position = pos
+		spike.rotation = dir.angle() + PI * 0.5
+		spike.z_index = WEAPON_FEEDBACK_Z
+		add_child(spike)
+		spike.scale = Vector2.ONE * 0.28
+		var tween := create_tween()
+		tween.tween_property(spike, "scale", Vector2.ONE, 0.16)
+		tween.parallel().tween_property(spike, "modulate:a", 0.0, 0.32)
+		tween.tween_callback(spike.queue_free)
+
+func _spawn_summon_feedback(weapon: Dictionary, origin: Vector2, target_pos: Vector2) -> void:
+	_spawn_area_feedback(weapon, origin, 42.0, "talisman")
+	_spawn_line_feedback(weapon, origin, target_pos, 6.0, "summon")
+
+func _spawn_summon_gate_feedback(weapon: Dictionary, origin: Vector2, target_pos: Vector2, index: int) -> void:
+	var color := AssetDB.color_for_element(str(weapon.get("element", "metal")))
+	var root := _feedback_root("WeaponSummonGate_%d_%s" % [index, str(weapon.get("id", ""))], origin, WEAPON_FEEDBACK_Z + 1)
+	_add_feedback_ring(root, 16.0, color, 2.4, "SummonGateRing", 28)
+	_add_feedback_icon(root, weapon, Vector2.ZERO, 0.028, 0.76)
+	var tween := create_tween()
+	tween.tween_property(root, "scale", Vector2.ONE * 1.7, 0.24)
+	tween.parallel().tween_property(root, "modulate:a", 0.0, 0.24)
+	tween.tween_callback(root.queue_free)
+	_add_world_line("WeaponSummonThread_%s" % str(weapon.get("id", "")), origin, target_pos, color, 3.0, 0.28, 0.2)
+
+func _feedback_root(node_name: String, pos: Vector2, z_value: int) -> Node2D:
+	var root := Node2D.new()
+	root.name = node_name
+	root.global_position = pos
+	root.z_index = z_value
+	add_child(root)
+	return root
+
+func _add_feedback_icon(parent: Node, weapon: Dictionary, pos: Vector2, scale_value: float, alpha: float) -> Sprite2D:
+	var icon := Sprite2D.new()
+	icon.name = "SourceWeaponIcon"
+	icon.texture = AssetDB.tex(str(weapon.get("art_id", "icon_%s" % str(weapon.get("element", "metal")))))
+	icon.position = pos
+	icon.scale = Vector2.ONE * scale_value
+	icon.modulate = Color(1, 1, 1, alpha)
+	icon.z_index = 4
+	parent.add_child(icon)
+	return icon
+
+func _world_feedback_icon(weapon: Dictionary, pos: Vector2, scale_value: float, z_value: int) -> Sprite2D:
+	var icon := Sprite2D.new()
+	icon.name = "TravelingWeaponIcon_%s" % str(weapon.get("id", ""))
+	icon.texture = AssetDB.tex(str(weapon.get("art_id", "icon_%s" % str(weapon.get("element", "metal")))))
+	icon.global_position = pos
+	icon.scale = Vector2.ONE * scale_value
+	icon.modulate = Color(1, 1, 1, 0.92)
+	icon.z_index = z_value
+	add_child(icon)
+	return icon
+
+func _add_feedback_fx(parent: Node, fx_id: String, pos: Vector2, scale_value: float, alpha: float) -> Sprite2D:
+	var fx := Sprite2D.new()
+	fx.name = "FeedbackFx"
+	fx.texture = AssetDB.tex(fx_id)
+	fx.position = pos
+	fx.scale = Vector2.ONE * scale_value
+	fx.modulate = Color(1, 1, 1, alpha)
+	fx.z_index = 1
+	parent.add_child(fx)
+	return fx
+
+func _add_feedback_ring(parent: Node, radius: float, color: Color, width: float, node_name: String, steps: int) -> Line2D:
+	var ring := Line2D.new()
+	ring.name = node_name
+	ring.closed = true
+	ring.width = width
+	ring.default_color = Color(color.r, color.g, color.b, color.a if color.a < 1.0 else 0.64)
+	ring.z_index = 2
+	for point in _circle_points(radius, steps):
+		ring.add_point(point)
+	parent.add_child(ring)
+	return ring
+
+func _add_feedback_square(parent: Node, radius: float, color: Color, width: float) -> void:
+	var square := Line2D.new()
+	square.name = "TalismanSquare"
+	square.closed = true
+	square.width = width
+	square.default_color = Color(color.r, color.g, color.b, 0.58)
+	square.z_index = 3
+	square.add_point(Vector2(-radius, -radius) * 0.6)
+	square.add_point(Vector2(radius, -radius) * 0.6)
+	square.add_point(Vector2(radius, radius) * 0.6)
+	square.add_point(Vector2(-radius, radius) * 0.6)
+	square.rotation = PI * 0.25
+	parent.add_child(square)
+
+func _add_feedback_spokes(parent: Node, radius: float, color: Color, count: int, width: float) -> void:
+	for i in range(count):
+		var angle := float(i) / float(count) * TAU
+		var spoke := Line2D.new()
+		spoke.name = "FeedbackSpoke"
+		spoke.width = width
+		spoke.default_color = Color(color.r, color.g, color.b, 0.48)
+		spoke.add_point(Vector2.ZERO)
+		spoke.add_point(Vector2(cos(angle), sin(angle)) * radius)
+		spoke.z_index = 1
+		parent.add_child(spoke)
+
+func _add_feedback_spores(parent: Node, radius: float, color: Color) -> void:
+	for i in range(8):
+		var angle := float(i) / 8.0 * TAU + rng.randf_range(-0.16, 0.16)
+		var spore := Sprite2D.new()
+		spore.name = "PoisonSpore"
+		spore.texture = AssetDB.tex("fx_wood")
+		spore.position = Vector2(cos(angle), sin(angle)) * radius * rng.randf_range(0.26, 0.82)
+		spore.scale = Vector2.ONE * rng.randf_range(0.035, 0.065)
+		spore.modulate = Color(color.r, color.g, color.b, 0.55)
+		spore.z_index = 2
+		parent.add_child(spore)
+
+func _add_hit_class_mark(parent: Node, klass: String, color: Color, secondary: bool) -> void:
+	var alpha := 0.42 if secondary else 0.64
+	match klass:
+		"dash_blade", "flying_sword":
+			var slash := Line2D.new()
+			slash.name = "HitSlashMark"
+			slash.width = 4.0 if secondary else 6.0
+			slash.default_color = Color(color.r, color.g, color.b, alpha)
+			slash.add_point(Vector2(-18, 8))
+			slash.add_point(Vector2(18, -8))
+			slash.z_index = 3
+			parent.add_child(slash)
+		"hammer", "spike":
+			_add_feedback_spokes(parent, 24.0 if secondary else 34.0, color, 6, 2.4)
+		"needle", "thorn":
+			for i in range(3):
+				var dart := Line2D.new()
+				dart.name = "HitDartMark"
+				dart.width = 2.0
+				dart.default_color = Color(color.r, color.g, color.b, alpha)
+				var y := -8.0 + float(i) * 8.0
+				dart.add_point(Vector2(-14, y))
+				dart.add_point(Vector2(14, y - 8.0))
+				dart.z_index = 3
+				parent.add_child(dart)
+		"area", "talisman", "aura":
+			_add_feedback_ring(parent, 25.0 if secondary else 34.0, color, 2.0, "HitPulseMark", 32)
+		"summon":
+			_add_feedback_square(parent, 25.0 if secondary else 34.0, color, 2.0)
+		"shield", "orbit":
+			_add_feedback_ring(parent, 20.0 if secondary else 28.0, color, 2.2, "HitGuardMark", 32)
+		_:
+			pass
+
+func _add_world_line(node_name: String, origin: Vector2, target_pos: Vector2, color: Color, width: float, alpha: float, duration: float) -> Line2D:
+	var line := Line2D.new()
+	line.name = node_name
+	line.z_index = WEAPON_FEEDBACK_Z - 1
+	line.width = width
+	line.default_color = Color(color.r, color.g, color.b, alpha)
+	line.add_point(to_local(origin))
+	line.add_point(to_local(target_pos))
+	add_child(line)
+	var tween := create_tween()
+	tween.tween_property(line, "width", max(1.0, width * 0.35), duration)
+	tween.parallel().tween_property(line, "modulate:a", 0.0, duration)
+	tween.tween_callback(line.queue_free)
+	return line
+
+func _circle_points(radius: float, steps: int) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for i in range(steps):
+		var angle := float(i) / float(steps) * TAU
+		points.append(Vector2(cos(angle) * radius, sin(angle) * radius))
+	return points
+
+func _weapon_feedback_fx_id(weapon: Dictionary, is_crit: bool) -> String:
+	if is_crit:
+		return "fx_crit"
+	match str(weapon.get("class", "flying_sword")):
+		"dash_blade", "flying_sword", "needle", "thorn", "summon":
+			return "fx_slash"
+		_:
+			return "fx_%s" % str(weapon.get("element", "metal"))
+
+func _effect_feedback_fx_id(kind: String, element: String) -> String:
+	match kind:
+		"poison", "root", "taunt":
+			return "fx_wood"
+		"ignite":
+			return "fx_fire"
+		"bleed", "vulnerable", "execute_setup", "ignore_armor":
+			return "fx_crit"
+		"slow", "chill_stack", "freeze", "pull":
+			return "fx_water"
+		"stagger", "petrify", "blind", "knockback":
+			return "fx_earth"
+		_:
+			return "fx_%s" % element
+
+func _effect_feedback_color(kind: String, element: String) -> Color:
+	match kind:
+		"poison", "root", "taunt":
+			return AssetDB.color_for_element("wood")
+		"ignite":
+			return AssetDB.color_for_element("fire")
+		"slow", "chill_stack", "freeze", "pull":
+			return AssetDB.color_for_element("water")
+		"stagger", "petrify", "blind", "knockback":
+			return AssetDB.color_for_element("earth")
+		"bleed", "vulnerable", "execute_setup", "ignore_armor":
+			return Color("#e8b259")
+		_:
+			return AssetDB.color_for_element(element)
 
 func _open_market(reason: String) -> void:
 	if market_open:
