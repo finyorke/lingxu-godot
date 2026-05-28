@@ -22,7 +22,7 @@ var affinity_options: Array = []
 var affinity_index := 0
 var affinity_badge_panel: PanelContainer
 var affinity_badge_label: Label
-var affinity_name_label: Label
+var affinity_dropdown: OptionButton
 var affinity_summary_label: Label
 var affinity_counter_label: Label
 
@@ -232,26 +232,26 @@ func _add_affinity(name: String, summary: String, id: String, icon: String, colo
 
 func _affinity_selector() -> Control:
 	var shell := PanelContainer.new()
-	shell.custom_minimum_size = Vector2(0, 92)
+	shell.custom_minimum_size = Vector2(0, 108)
 	shell.add_theme_stylebox_override("panel", _panel_style(Color(0.012, 0.024, 0.028, 0.92), Color(0.36, 0.88, 0.8, 0.44), 1, 7, 8))
 
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 10)
-	margin.add_theme_constant_override("margin_right", 10)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
 	shell.add_child(margin)
 
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	margin.add_child(row)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	margin.add_child(box)
 
-	var prev := _nav_button("<")
-	prev.pressed.connect(func(): _cycle_affinity(-1))
-	row.add_child(prev)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	box.add_child(row)
 
 	affinity_badge_panel = PanelContainer.new()
-	affinity_badge_panel.custom_minimum_size = Vector2(72, 72)
+	affinity_badge_panel.custom_minimum_size = Vector2(66, 66)
 	row.add_child(affinity_badge_panel)
 
 	var badge_margin := MarginContainer.new()
@@ -265,51 +265,73 @@ func _affinity_selector() -> Control:
 	affinity_badge_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	affinity_badge_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	affinity_badge_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_apply_display_font(affinity_badge_label, 32, Color("#fff8e8"), 2)
+	_apply_display_font(affinity_badge_label, 30, Color("#fff8e8"), 2)
 	badge_margin.add_child(affinity_badge_label)
 
-	var text_box := VBoxContainer.new()
-	text_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text_box.add_theme_constant_override("separation", 2)
-	row.add_child(text_box)
-
-	affinity_name_label = Label.new()
-	_apply_body_font(affinity_name_label, 24, Color("#fff8e8"))
-	affinity_name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	text_box.add_child(affinity_name_label)
+	affinity_dropdown = OptionButton.new()
+	affinity_dropdown.custom_minimum_size = Vector2(0, 64)
+	affinity_dropdown.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	affinity_dropdown.focus_mode = Control.FOCUS_NONE
+	affinity_dropdown.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	affinity_dropdown.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_apply_body_font(affinity_dropdown, 22, Color("#fff8e8"))
+	for i in range(affinity_options.size()):
+		var option: Dictionary = affinity_options[i]
+		affinity_dropdown.add_item(_affinity_row_text(option), i)
+		affinity_dropdown.set_item_metadata(i, str(option.get("id", "five")))
+	affinity_dropdown.item_selected.connect(_select_affinity)
+	row.add_child(affinity_dropdown)
 
 	affinity_summary_label = Label.new()
 	affinity_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_apply_body_font(affinity_summary_label, 18, Color("#cfe5e0"))
-	text_box.add_child(affinity_summary_label)
+	_apply_body_font(affinity_summary_label, 17, Color("#cfe5e0"))
+	box.add_child(affinity_summary_label)
 
 	affinity_counter_label = Label.new()
-	_apply_body_font(affinity_counter_label, 16, Color("#7fd8ce"))
-	text_box.add_child(affinity_counter_label)
-
-	var next := _nav_button(">")
-	next.pressed.connect(func(): _cycle_affinity(1))
-	row.add_child(next)
+	_apply_body_font(affinity_counter_label, 15, Color("#7fd8ce"))
+	box.add_child(affinity_counter_label)
 	_update_affinity_selector()
 	return shell
 
-func _cycle_affinity(delta: int) -> void:
+func _select_affinity(index: int) -> void:
 	if affinity_options.is_empty():
 		return
-	affinity_index = (affinity_index + delta + affinity_options.size()) % affinity_options.size()
+	affinity_index = clampi(index, 0, affinity_options.size() - 1)
 	_update_affinity_selector()
 
+func _affinity_row_text(option: Dictionary) -> String:
+	return "%s  %s" % [str(option.get("icon", "五")), str(option.get("name", "五行灵根"))]
+
 func _update_affinity_selector() -> void:
-	if affinity_options.is_empty() or affinity_name_label == null:
+	if affinity_options.is_empty() or affinity_dropdown == null:
 		return
 	var option: Dictionary = affinity_options[affinity_index]
 	var accent := Color(str(option.get("color", "#e8b259")))
 	affinity_badge_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.012, 0.024, 0.028, 0.96).lerp(accent, 0.24), Color(accent.r, accent.g, accent.b, 0.86), 2, 14, 4))
 	affinity_badge_label.text = str(option.get("icon", "五"))
 	affinity_badge_label.add_theme_color_override("font_color", accent.lightened(0.32))
-	affinity_name_label.text = str(option.get("name", "五行灵根"))
+	affinity_dropdown.select(affinity_index)
+	affinity_dropdown.add_theme_color_override("font_color", Color("#fff8e8"))
+	affinity_dropdown.add_theme_color_override("font_hover_color", Color("#fff8e8"))
+	affinity_dropdown.add_theme_color_override("font_pressed_color", Color("#fff8e8"))
+	affinity_dropdown.add_theme_color_override("font_focus_color", Color("#fff8e8"))
+	affinity_dropdown.add_theme_stylebox_override("normal", _panel_style(Color(0.018, 0.032, 0.035, 0.9).lerp(accent, 0.13), Color(accent.r, accent.g, accent.b, 0.64), 1, 7, 10))
+	affinity_dropdown.add_theme_stylebox_override("hover", _panel_style(Color(0.026, 0.05, 0.052, 0.96).lerp(accent, 0.18), Color(accent.r, accent.g, accent.b, 0.9), 2, 7, 10))
+	affinity_dropdown.add_theme_stylebox_override("pressed", _panel_style(Color(0.055, 0.05, 0.028, 0.98).lerp(accent, 0.2), Color("#fff4b8"), 2, 7, 10))
+	affinity_dropdown.add_theme_stylebox_override("focus", _panel_style(Color(0.018, 0.032, 0.035, 0.9).lerp(accent, 0.13), Color("#fff4b8"), 2, 7, 10))
+	_style_affinity_popup(accent)
 	affinity_summary_label.text = str(option.get("summary", ""))
 	affinity_counter_label.text = "%02d / %02d" % [affinity_index + 1, affinity_options.size()]
+
+func _style_affinity_popup(accent: Color) -> void:
+	var popup := affinity_dropdown.get_popup()
+	popup.add_theme_font_override("font", BODY_FONT)
+	popup.add_theme_font_size_override("font_size", 20)
+	popup.add_theme_color_override("font_color", Color("#eaf6ff"))
+	popup.add_theme_color_override("font_hover_color", Color("#fff8e8"))
+	popup.add_theme_color_override("font_selected_color", accent.lightened(0.25))
+	popup.add_theme_stylebox_override("panel", _panel_style(Color(0.012, 0.024, 0.028, 0.98), Color(accent.r, accent.g, accent.b, 0.78), 2, 7, 8))
+	popup.add_theme_stylebox_override("hover", _panel_style(Color(0.04, 0.07, 0.065, 0.98).lerp(accent, 0.2), Color(accent.r, accent.g, accent.b, 0.72), 1, 5, 6))
 
 func _root_card(element: String) -> Button:
 	var info: Dictionary = ROOT_INFO[element]
