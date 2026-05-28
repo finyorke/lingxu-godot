@@ -20,11 +20,18 @@ var preview_label: Label
 var confirm_button: Button
 var affinity_options: Array = []
 var affinity_index := 0
+var affinity_shell_panel: PanelContainer
 var affinity_badge_panel: PanelContainer
 var affinity_badge_label: Label
+var affinity_dropdown_button: Button
 var affinity_name_label: Label
 var affinity_summary_label: Label
+var affinity_counter_panel: PanelContainer
 var affinity_counter_label: Label
+var affinity_chevron_label: Label
+var affinity_popup: PopupPanel
+var affinity_popup_list: VBoxContainer
+var affinity_popup_rows: Array = []
 
 func _ready() -> void:
 	FontUtil.ensure_fallback(DISPLAY_FONT, BODY_FONT)
@@ -180,9 +187,9 @@ func show_root_choice() -> void:
 	for e in ELEMENTS:
 		grid.add_child(_root_card(e))
 
-	var controls_panel := _content_panel(root, Rect2(0.065, 0.615, 0.44, 0.275), Color(0.018, 0.032, 0.035, 0.8), Color(0.36, 0.88, 0.8, 0.42), 8)
+	var controls_panel := _content_panel(root, Rect2(0.065, 0.575, 0.44, 0.35), Color(0.018, 0.032, 0.035, 0.8), Color(0.36, 0.88, 0.8, 0.42), 8)
 	var controls: VBoxContainer = controls_panel.get_node("Margin/Box")
-	controls.add_theme_constant_override("separation", 10)
+	controls.add_theme_constant_override("separation", 8)
 	var label := Label.new()
 	label.text = "修行体质"
 	_apply_display_font(label, 32, Color("#e8b259"), 2)
@@ -207,7 +214,7 @@ func show_root_choice() -> void:
 	confirm_button.pressed.connect(_confirm_roots)
 	row.add_child(confirm_button)
 
-	var preview_panel := _content_panel(root, Rect2(0.525, 0.615, 0.405, 0.275), Color(0.018, 0.032, 0.035, 0.8), Color("#e8b259"), 8)
+	var preview_panel := _content_panel(root, Rect2(0.525, 0.575, 0.405, 0.35), Color(0.018, 0.032, 0.035, 0.8), Color("#e8b259"), 8)
 	var preview_box: VBoxContainer = preview_panel.get_node("Margin/Box")
 	var preview_title := Label.new()
 	preview_title.text = "道途回响"
@@ -231,30 +238,48 @@ func _add_affinity(name: String, summary: String, id: String, icon: String, colo
 	})
 
 func _affinity_selector() -> Control:
-	var shell := PanelContainer.new()
-	shell.custom_minimum_size = Vector2(0, 92)
-	shell.add_theme_stylebox_override("panel", _panel_style(Color(0.012, 0.024, 0.028, 0.92), Color(0.36, 0.88, 0.8, 0.44), 1, 7, 8))
+	affinity_popup_rows.clear()
+	affinity_shell_panel = PanelContainer.new()
+	affinity_shell_panel.custom_minimum_size = Vector2(0, 118)
+	affinity_shell_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.012, 0.024, 0.028, 0.92), Color(0.36, 0.88, 0.8, 0.44), 1, 7, 8))
 
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 10)
-	margin.add_theme_constant_override("margin_right", 10)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_bottom", 8)
-	shell.add_child(margin)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	affinity_shell_panel.add_child(margin)
+
+	affinity_dropdown_button = Button.new()
+	affinity_dropdown_button.text = ""
+	affinity_dropdown_button.custom_minimum_size = Vector2(0, 92)
+	affinity_dropdown_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	affinity_dropdown_button.focus_mode = Control.FOCUS_NONE
+	affinity_dropdown_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	affinity_dropdown_button.pressed.connect(_toggle_affinity_popup)
+	margin.add_child(affinity_dropdown_button)
+
+	var button_margin := MarginContainer.new()
+	button_margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	button_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button_margin.add_theme_constant_override("margin_left", 12)
+	button_margin.add_theme_constant_override("margin_right", 12)
+	button_margin.add_theme_constant_override("margin_top", 10)
+	button_margin.add_theme_constant_override("margin_bottom", 10)
+	affinity_dropdown_button.add_child(button_margin)
 
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	margin.add_child(row)
-
-	var prev := _nav_button("<")
-	prev.pressed.connect(func(): _cycle_affinity(-1))
-	row.add_child(prev)
+	row.add_theme_constant_override("separation", 12)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	button_margin.add_child(row)
 
 	affinity_badge_panel = PanelContainer.new()
-	affinity_badge_panel.custom_minimum_size = Vector2(72, 72)
+	affinity_badge_panel.custom_minimum_size = Vector2(68, 68)
+	affinity_badge_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(affinity_badge_panel)
 
 	var badge_margin := MarginContainer.new()
+	badge_margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	badge_margin.add_theme_constant_override("margin_left", 4)
 	badge_margin.add_theme_constant_override("margin_right", 4)
 	badge_margin.add_theme_constant_override("margin_top", 4)
@@ -265,51 +290,233 @@ func _affinity_selector() -> Control:
 	affinity_badge_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	affinity_badge_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	affinity_badge_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_apply_display_font(affinity_badge_label, 32, Color("#fff8e8"), 2)
+	_apply_display_font(affinity_badge_label, 30, Color("#fff8e8"), 2)
 	badge_margin.add_child(affinity_badge_label)
 
 	var text_box := VBoxContainer.new()
 	text_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text_box.add_theme_constant_override("separation", 2)
+	text_box.add_theme_constant_override("separation", 3)
+	text_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(text_box)
 
+	var title_row := HBoxContainer.new()
+	title_row.add_theme_constant_override("separation", 8)
+	title_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	text_box.add_child(title_row)
+
 	affinity_name_label = Label.new()
+	affinity_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	affinity_name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	affinity_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_apply_body_font(affinity_name_label, 24, Color("#fff8e8"))
-	affinity_name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	text_box.add_child(affinity_name_label)
+	title_row.add_child(affinity_name_label)
+
+	affinity_counter_panel = PanelContainer.new()
+	affinity_counter_panel.custom_minimum_size = Vector2(72, 28)
+	affinity_counter_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	title_row.add_child(affinity_counter_panel)
+
+	affinity_counter_label = Label.new()
+	affinity_counter_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	affinity_counter_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	affinity_counter_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_apply_body_font(affinity_counter_label, 14, Color("#7fd8ce"))
+	affinity_counter_panel.add_child(affinity_counter_label)
 
 	affinity_summary_label = Label.new()
 	affinity_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_apply_body_font(affinity_summary_label, 18, Color("#cfe5e0"))
+	affinity_summary_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_apply_body_font(affinity_summary_label, 16, Color("#cfe5e0"))
 	text_box.add_child(affinity_summary_label)
 
-	affinity_counter_label = Label.new()
-	_apply_body_font(affinity_counter_label, 16, Color("#7fd8ce"))
-	text_box.add_child(affinity_counter_label)
+	affinity_chevron_label = Label.new()
+	affinity_chevron_label.custom_minimum_size = Vector2(34, 68)
+	affinity_chevron_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	affinity_chevron_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	affinity_chevron_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_apply_body_font(affinity_chevron_label, 28, Color("#e8b259"))
+	row.add_child(affinity_chevron_label)
 
-	var next := _nav_button(">")
-	next.pressed.connect(func(): _cycle_affinity(1))
-	row.add_child(next)
+	affinity_popup = PopupPanel.new()
+	affinity_popup.add_theme_stylebox_override("panel", _panel_style(Color(0.008, 0.018, 0.02, 0.98), Color(0.36, 0.88, 0.8, 0.72), 2, 8, 8))
+	affinity_shell_panel.add_child(affinity_popup)
+
+	var popup_margin := MarginContainer.new()
+	popup_margin.add_theme_constant_override("margin_left", 10)
+	popup_margin.add_theme_constant_override("margin_right", 10)
+	popup_margin.add_theme_constant_override("margin_top", 10)
+	popup_margin.add_theme_constant_override("margin_bottom", 10)
+	affinity_popup.add_child(popup_margin)
+
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(0, 330)
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	popup_margin.add_child(scroll)
+
+	affinity_popup_list = VBoxContainer.new()
+	affinity_popup_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	affinity_popup_list.add_theme_constant_override("separation", 7)
+	scroll.add_child(affinity_popup_list)
+
+	for i in range(affinity_options.size()):
+		var option: Dictionary = affinity_options[i]
+		var option_button := _affinity_popup_row(option, i)
+		affinity_popup_list.add_child(option_button)
 	_update_affinity_selector()
-	return shell
+	return affinity_shell_panel
 
-func _cycle_affinity(delta: int) -> void:
+func _select_affinity(index: int) -> void:
 	if affinity_options.is_empty():
 		return
-	affinity_index = (affinity_index + delta + affinity_options.size()) % affinity_options.size()
+	affinity_index = clampi(index, 0, affinity_options.size() - 1)
 	_update_affinity_selector()
 
+func _select_affinity_from_popup(index: int) -> void:
+	_select_affinity(index)
+	if affinity_popup != null:
+		affinity_popup.hide()
+
+func _toggle_affinity_popup() -> void:
+	if affinity_popup == null or affinity_dropdown_button == null:
+		return
+	if affinity_popup.visible:
+		affinity_popup.hide()
+		return
+	_update_affinity_selector()
+	affinity_popup.popup(_affinity_popup_rect())
+
+func _affinity_popup_rect() -> Rect2i:
+	var button_rect := affinity_dropdown_button.get_global_rect()
+	var viewport_rect := get_viewport().get_visible_rect()
+	var popup_width := maxi(int(button_rect.size.x), 520)
+	var popup_height := mini(390, maxi(300, int(viewport_rect.size.y * 0.52)))
+	var popup_x := int(button_rect.position.x + button_rect.size.x - popup_width)
+	popup_x = clampi(popup_x, 18, maxi(18, int(viewport_rect.size.x) - popup_width - 18))
+	var below_y := int(button_rect.position.y + button_rect.size.y + 8)
+	var popup_y := below_y
+	if below_y + popup_height + 18 > int(viewport_rect.size.y):
+		popup_y = int(button_rect.position.y) - popup_height - 8
+	popup_y = clampi(popup_y, 18, maxi(18, int(viewport_rect.size.y) - popup_height - 18))
+	return Rect2i(Vector2i(popup_x, popup_y), Vector2i(popup_width, popup_height))
+
+func _affinity_popup_row(option: Dictionary, index: int) -> Button:
+	var accent := Color(str(option.get("color", "#e8b259")))
+	var button := Button.new()
+	button.text = ""
+	button.custom_minimum_size = Vector2(0, 72)
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button.focus_mode = Control.FOCUS_NONE
+	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	button.pressed.connect(func(selected_index: int = index): _select_affinity_from_popup(selected_index))
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	button.add_child(margin)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	margin.add_child(row)
+
+	var badge := PanelContainer.new()
+	badge.custom_minimum_size = Vector2(50, 50)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.add_theme_stylebox_override("panel", _panel_style(Color(0.01, 0.02, 0.022, 0.94).lerp(accent, 0.2), Color(accent.r, accent.g, accent.b, 0.68), 1, 12, 3))
+	row.add_child(badge)
+
+	var badge_label := Label.new()
+	badge_label.text = str(option.get("icon", "五"))
+	badge_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	badge_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_apply_display_font(badge_label, 24, accent.lightened(0.28), 1)
+	badge.add_child(badge_label)
+
+	var copy := VBoxContainer.new()
+	copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	copy.add_theme_constant_override("separation", 1)
+	copy.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(copy)
+
+	var name := Label.new()
+	name.text = str(option.get("name", "五行灵根"))
+	name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_apply_body_font(name, 20, Color("#fff8e8"))
+	copy.add_child(name)
+
+	var summary := Label.new()
+	summary.text = str(option.get("summary", ""))
+	summary.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	summary.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_apply_body_font(summary, 15, Color("#b9d8d2"))
+	copy.add_child(summary)
+
+	var marker := Label.new()
+	marker.custom_minimum_size = Vector2(58, 50)
+	marker.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	marker.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_apply_display_font(marker, 22, accent.lightened(0.25), 1)
+	row.add_child(marker)
+
+	affinity_popup_rows.append({
+		"index": index,
+		"button": button,
+		"badge": badge,
+		"name": name,
+		"summary": summary,
+		"marker": marker
+	})
+	return button
+
 func _update_affinity_selector() -> void:
-	if affinity_options.is_empty() or affinity_name_label == null:
+	if affinity_options.is_empty() or affinity_dropdown_button == null:
 		return
 	var option: Dictionary = affinity_options[affinity_index]
 	var accent := Color(str(option.get("color", "#e8b259")))
+	affinity_shell_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.012, 0.024, 0.028, 0.92).lerp(accent, 0.08), Color(accent.r, accent.g, accent.b, 0.52), 1, 7, 8))
 	affinity_badge_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.012, 0.024, 0.028, 0.96).lerp(accent, 0.24), Color(accent.r, accent.g, accent.b, 0.86), 2, 14, 4))
 	affinity_badge_label.text = str(option.get("icon", "五"))
 	affinity_badge_label.add_theme_color_override("font_color", accent.lightened(0.32))
 	affinity_name_label.text = str(option.get("name", "五行灵根"))
 	affinity_summary_label.text = str(option.get("summary", ""))
+	affinity_chevron_label.text = "▼"
+	affinity_chevron_label.add_theme_color_override("font_color", accent.lightened(0.25))
 	affinity_counter_label.text = "%02d / %02d" % [affinity_index + 1, affinity_options.size()]
+	affinity_counter_panel.add_theme_stylebox_override("panel", _panel_style(Color(0.012, 0.024, 0.028, 0.92).lerp(accent, 0.2), Color(accent.r, accent.g, accent.b, 0.64), 1, 12, 3))
+	affinity_dropdown_button.add_theme_stylebox_override("normal", _panel_style(Color(0.015, 0.027, 0.03, 0.92).lerp(accent, 0.12), Color(accent.r, accent.g, accent.b, 0.58), 1, 7, 8))
+	affinity_dropdown_button.add_theme_stylebox_override("hover", _panel_style(Color(0.024, 0.045, 0.046, 0.98).lerp(accent, 0.18), Color(accent.r, accent.g, accent.b, 0.92), 2, 7, 8))
+	affinity_dropdown_button.add_theme_stylebox_override("pressed", _panel_style(Color(0.055, 0.05, 0.028, 0.98).lerp(accent, 0.2), Color("#fff4b8"), 2, 7, 8))
+	affinity_dropdown_button.add_theme_stylebox_override("focus", _panel_style(Color(0.018, 0.032, 0.035, 0.94).lerp(accent, 0.14), Color("#fff4b8"), 2, 7, 8))
+	if affinity_popup != null:
+		affinity_popup.add_theme_stylebox_override("panel", _panel_style(Color(0.008, 0.018, 0.02, 0.98).lerp(accent, 0.05), Color(accent.r, accent.g, accent.b, 0.78), 2, 8, 8))
+	for row_view in affinity_popup_rows:
+		var row_index := int(row_view.get("index", 0))
+		var row_option: Dictionary = affinity_options[row_index]
+		var row_accent := Color(str(row_option.get("color", "#e8b259")))
+		var selected := row_index == affinity_index
+		var button: Button = row_view["button"]
+		var badge: PanelContainer = row_view["badge"]
+		var name: Label = row_view["name"]
+		var summary: Label = row_view["summary"]
+		var marker: Label = row_view["marker"]
+		var row_bg := Color(0.012, 0.024, 0.028, 0.88).lerp(row_accent, 0.2 if selected else 0.08)
+		var row_border := Color(row_accent.r, row_accent.g, row_accent.b, 0.86 if selected else 0.36)
+		button.add_theme_stylebox_override("normal", _panel_style(row_bg, row_border, 2 if selected else 1, 7, 7))
+		button.add_theme_stylebox_override("hover", _panel_style(Color(0.03, 0.055, 0.058, 0.98).lerp(row_accent, 0.18), Color(row_accent.r, row_accent.g, row_accent.b, 0.92), 2, 7, 7))
+		button.add_theme_stylebox_override("pressed", _panel_style(Color(0.06, 0.05, 0.028, 0.98).lerp(row_accent, 0.2), Color("#fff4b8"), 2, 7, 7))
+		badge.add_theme_stylebox_override("panel", _panel_style(Color(0.01, 0.02, 0.022, 0.95).lerp(row_accent, 0.28 if selected else 0.18), Color(row_accent.r, row_accent.g, row_accent.b, 0.78 if selected else 0.54), 2 if selected else 1, 12, 3))
+		name.add_theme_color_override("font_color", Color("#fff8e8") if selected else Color("#eaf6ff"))
+		summary.add_theme_color_override("font_color", Color("#d8f6ef") if selected else Color("#a8c8c2"))
+		marker.text = "已选" if selected else ""
+		marker.add_theme_color_override("font_color", row_accent.lightened(0.28))
 
 func _root_card(element: String) -> Button:
 	var info: Dictionary = ROOT_INFO[element]
@@ -518,18 +725,6 @@ func _make_rule(color: Color, alpha: float) -> ColorRect:
 	rule.custom_minimum_size = Vector2(1, 2)
 	rule.color = Color(color.r, color.g, color.b, alpha)
 	return rule
-
-func _nav_button(text: String) -> Button:
-	var button := Button.new()
-	button.text = text
-	button.custom_minimum_size = Vector2(44, 72)
-	button.focus_mode = Control.FOCUS_NONE
-	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	_apply_body_font(button, 26, Color("#eaf6ff"))
-	button.add_theme_stylebox_override("normal", _panel_style(Color(0.018, 0.032, 0.035, 0.78), Color(0.36, 0.88, 0.8, 0.42), 1, 6, 6))
-	button.add_theme_stylebox_override("hover", _panel_style(Color(0.035, 0.06, 0.062, 0.92), Color("#e8b259"), 2, 6, 6))
-	button.add_theme_stylebox_override("pressed", _panel_style(Color(0.07, 0.065, 0.03, 0.96), Color("#fff4b8"), 2, 6, 6))
-	return button
 
 func _primary_button(text: String) -> Button:
 	var button := Button.new()
