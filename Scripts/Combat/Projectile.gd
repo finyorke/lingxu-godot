@@ -15,7 +15,7 @@ func setup(weapon_data: Dictionary, origin: Vector2, target_pos: Vector2) -> voi
 	var dir := target_pos - origin
 	if dir.length_squared() < 4.0:
 		dir = Vector2.RIGHT.rotated(randf() * TAU)
-	velocity = dir.normalized() * 560.0
+	velocity = dir.normalized() * float(weapon.get("proj_speed", 560.0))
 	ttl = 1.3
 	pierce_left = int(weapon.get("pierce", 0)) + 1
 	radius = 20.0 + float(weapon.get("tier", 1)) * 2.0
@@ -35,9 +35,14 @@ func tick(delta: float, enemies: Array, player: YunxiPlayer) -> bool:
 		var hit_radius := radius + float(enemy.radius)
 		if global_position.distance_squared_to(enemy.global_position) <= hit_radius * hit_radius:
 			hit_ids[enemy.get_instance_id()] = true
-			var result := GameState.calculate_weapon_damage(weapon, enemy)
-			enemy.take_damage(float(result["amount"]), bool(result["is_crit"]), str(result["element"]))
-			player.heal_from_lifesteal(float(result["amount"]))
+			var result := {}
+			var arena := get_parent()
+			if arena != null and arena.has_method("_hit_enemy"):
+				result = arena._hit_enemy(weapon, enemy, global_position, true)
+			else:
+				result = GameState.calculate_weapon_damage(weapon, enemy)
+				enemy.take_damage(float(result["amount"]), bool(result["is_crit"]), str(result["element"]))
+				player.heal_from_lifesteal(float(result["amount"]))
 			_spawn_hit_fx(enemy.global_position, str(result["element"]), bool(result["is_crit"]))
 			SignalsBus.hud_request_hitstop.emit(0.025 if bool(result["is_crit"]) else 0.012)
 			pierce_left -= 1

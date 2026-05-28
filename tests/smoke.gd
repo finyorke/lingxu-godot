@@ -19,6 +19,7 @@ func _init() -> void:
 		"res://assets/backgrounds/arena.png",
 		"res://assets/sprites/yunxi.png",
 		"res://assets/enemies/enemies_sheet.png",
+		"res://assets/enemies/serpent_boss.png",
 		"res://assets/enemies/sword_demon.png",
 		"res://assets/weapons/weapon_icons.png",
 		"res://assets/fx/combat_fx.png",

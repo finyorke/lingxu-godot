@@ -13,6 +13,11 @@ const STARTER_BY_ELEMENT := {
 const MULTI_ELEMENT_BONUS := {1: 1.0, 2: 1.16, 3: 1.32, 4: 1.50, 5: 1.65}
 const COUNTERS := {"metal": "wood", "wood": "earth", "earth": "water", "water": "fire", "fire": "metal"}
 const GENERATES := {"wood": "fire", "fire": "earth", "earth": "metal", "metal": "water", "water": "wood"}
+const SET_EFFECT_KEYS := {
+	"execute_threshold": true,
+	"execute_mult": true,
+	"quake_radius": true
+}
 
 var rng := RandomNumberGenerator.new()
 var active_roots: Array = ["metal", "fire", "earth"]
@@ -144,6 +149,8 @@ func _apply_effects(effects: Dictionary) -> void:
 		var value = effects[key]
 		if typeof(value) == TYPE_BOOL:
 			stats[key] = value
+		elif SET_EFFECT_KEYS.has(key):
+			stats[key] = max(float(stats.get(key, 0.0)), float(value))
 		else:
 			stats[key] = float(stats.get(key, 0.0)) + float(value)
 		SignalsBus.stat_changed.emit(key, stats[key])
@@ -199,7 +206,14 @@ func calculate_weapon_damage(weapon: Dictionary, target: Node = null) -> Diction
 	raw *= 1.0 + converted_element_bonus(element) + float(stats.get("element_pct", 0.0))
 	raw *= multi_element_multiplier()
 	raw *= 1.0 + 0.22 * float(int(weapon.get("tier", 1)) - 1)
-	var is_crit: bool = rng.randf() < clamp(float(stats.get("crit_chance", 0.05)), 0.0, 0.95)
+	var crit_chance := float(stats.get("crit_chance", 0.05))
+	for effect in weapon.get("on_hit", []):
+		var kind := str(effect.get("effect", ""))
+		if kind == "crit_bonus":
+			crit_chance += float(effect.get("value", 0.0))
+		elif kind == "ignore_armor":
+			raw *= 1.12
+	var is_crit: bool = rng.randf() < clamp(crit_chance, 0.0, 0.95)
 	if element == "fire" and target != null and target.has_method("hp_ratio"):
 		if target.hp_ratio() <= float(stats.get("execute_threshold", -1.0)) and bool(stats.get("fire_execute", false)):
 			is_crit = true

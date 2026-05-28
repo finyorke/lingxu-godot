@@ -38,7 +38,7 @@
   },
   "serpent_boss": {
     "name": "赤睛妖蟒",
-    "sprite": "iron_puppet",
+    "sprite": "serpent_boss",
     "hp": 860,
     "speed": 35,
     "damage": 24,

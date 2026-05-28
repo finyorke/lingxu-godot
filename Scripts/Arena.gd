@@ -189,7 +189,13 @@ func _update_weapons(delta: float) -> void:
 func _fire_weapon(weapon: Dictionary) -> void:
 	var klass := str(weapon.get("class", "flying_sword"))
 	if klass == "shield":
-		player.shield = min(float(GameState.stats.get("max_qi_shield", 60)), player.shield + 10.0 + float(GameState.stats.get("engineering", 0.0)))
+		var shield_gain := 10.0
+		for effect in weapon.get("on_hit", []):
+			if str(effect.get("effect", "")) == "grant_shield":
+				var scale_eng := float(effect.get("scale_eng", 1.0))
+				var tier_mult := 1.0 + 0.22 * float(int(weapon.get("tier", 1)) - 1)
+				shield_gain += (8.0 + float(GameState.stats.get("engineering", 0.0))) * scale_eng * tier_mult
+		_add_player_shield(shield_gain)
 		_spawn_fx(player.global_position, "fx_water", 0.25)
 		return
 	if klass == "orbit" or klass == "aura":
@@ -242,11 +248,146 @@ func _nearby_count(pos: Vector2, radius: float) -> int:
 			count += 1
 	return count
 
-func _hit_enemy(weapon: Dictionary, enemy: LingxuEnemy) -> void:
+func _hit_enemy(weapon: Dictionary, enemy: LingxuEnemy, hit_pos := Vector2.ZERO, allow_secondary := true) -> Dictionary:
+	if enemy == null or not is_instance_valid(enemy):
+		return {}
+	var target_pos := enemy.global_position if hit_pos == Vector2.ZERO else hit_pos
 	var result := GameState.calculate_weapon_damage(weapon, enemy)
 	enemy.take_damage(float(result["amount"]), bool(result["is_crit"]), str(result["element"]))
 	player.heal_from_lifesteal(float(result["amount"]))
+	_apply_weapon_on_hit(weapon, enemy, target_pos, result, allow_secondary)
 	SignalsBus.hud_request_hitstop.emit(0.02)
+	return result
+
+func _apply_weapon_on_hit(weapon: Dictionary, enemy: LingxuEnemy, hit_pos: Vector2, result: Dictionary, allow_secondary := true) -> void:
+	var effects: Array = weapon.get("on_hit", [])
+	if effects.is_empty():
+		return
+	var element := str(result.get("element", weapon.get("element", "metal")))
+	for effect in effects:
+		var kind := str(effect.get("effect", ""))
+		match kind:
+			"poison", "bleed", "ignite":
+				if is_instance_valid(enemy):
+					enemy.add_dot(kind, element, float(effect.get("dps", 3.0)), float(effect.get("dur", 2.5)), bool(effect.get("stack", false)))
+			"slow":
+				if is_instance_valid(enemy):
+					enemy.apply_slow(float(effect.get("value", 0.22)), float(effect.get("dur", 1.5)))
+			"chill_stack":
+				if is_instance_valid(enemy):
+					enemy.add_chill_stack(int(effect.get("stacks", 5)), float(effect.get("freeze_dur", 0.8)))
+			"freeze":
+				if is_instance_valid(enemy):
+					enemy.apply_freeze(float(effect.get("dur", 1.0)))
+			"petrify":
+				if is_instance_valid(enemy):
+					enemy.apply_petrify(float(effect.get("dur", 1.0)))
+			"root":
+				if is_instance_valid(enemy):
+					enemy.apply_root(float(effect.get("dur", 0.6)))
+			"stagger":
+				if is_instance_valid(enemy):
+					enemy.apply_root(float(effect.get("dur", 0.22)))
+			"blind":
+				if is_instance_valid(enemy):
+					enemy.apply_slow(0.35, float(effect.get("dur", 1.2)))
+			"vulnerable", "execute_setup":
+				if is_instance_valid(enemy):
+					enemy.apply_vulnerable(float(effect.get("value", 0.14)), float(effect.get("dur", 2.0)))
+			"ignore_armor":
+				if is_instance_valid(enemy):
+					enemy.apply_vulnerable(float(effect.get("value", 0.12)), float(effect.get("dur", 2.2)))
+				_spawn_fx(hit_pos, "fx_crit", 0.16)
+			"knockback":
+				if is_instance_valid(enemy):
+					enemy.apply_knockback(player.global_position, float(effect.get("value", 20.0)))
+			"pull":
+				if is_instance_valid(enemy):
+					enemy.apply_pull(player.global_position, float(effect.get("value", 18.0)))
+			"quake":
+				if allow_secondary:
+					var radius := float(effect.get("radius", GameState.stats.get("quake_radius", weapon.get("radius", 120))))
+					_secondary_aoe(weapon, hit_pos, radius, 0.38, element, false, true)
+					_spawn_fx(hit_pos, "fx_earth", 0.22)
+			"explode":
+				if allow_secondary:
+					var radius := float(effect.get("radius", weapon.get("radius", 115))) * 0.85
+					_secondary_aoe(weapon, hit_pos, radius, float(effect.get("damage_mult", 0.42)), element, true, false)
+					_spawn_fx(hit_pos, "fx_fire", 0.22)
+			"ignite_nova":
+				if allow_secondary:
+					_secondary_status_wave("ignite", element, hit_pos, float(effect.get("radius", 230.0)), float(effect.get("dps", 6.0)), float(effect.get("dur", 3.0)), true)
+					_spawn_fx(hit_pos, "fx_fire", 0.34)
+			"poison_burst":
+				if allow_secondary:
+					_secondary_status_wave("poison", element, hit_pos, float(effect.get("radius", 210.0)), float(effect.get("dps", 7.0)), float(effect.get("dur", 4.0)), true)
+					_spawn_fx(hit_pos, "fx_wood", 0.34)
+			"shield_splash":
+				_add_player_shield(float(effect.get("value", 1.0)) + float(GameState.stats.get("engineering", 0.0)) * 0.15)
+			"armor_up":
+				_add_player_shield(2.0 + float(effect.get("value", 1.0)) * 2.0)
+			"taunt":
+				if is_instance_valid(enemy):
+					enemy.apply_root(float(effect.get("dur", 0.35)))
+			"split_chance":
+				if allow_secondary and rng.randf() < float(effect.get("value", 0.1)):
+					var split_target := _find_split_target(hit_pos, enemy, float(effect.get("radius", 260.0)))
+					if split_target != null:
+						var split_weapon := _make_secondary_weapon(weapon, 0.45, element)
+						_hit_enemy(split_weapon, split_target, split_target.global_position, false)
+						_spawn_fx(split_target.global_position, "fx_slash", 0.16)
+			_:
+				pass
+
+func _secondary_aoe(source_weapon: Dictionary, center: Vector2, radius: float, damage_mult: float, element: String, ignite_targets := false, knock_targets := false) -> void:
+	var secondary_weapon := _make_secondary_weapon(source_weapon, damage_mult, element)
+	var radius_sq := radius * radius
+	var hits := 0
+	for other in enemies:
+		if hits >= 6:
+			break
+		if other == null or not is_instance_valid(other):
+			continue
+		if center.distance_squared_to(other.global_position) > radius_sq:
+			continue
+		_hit_enemy(secondary_weapon, other, center, false)
+		if ignite_targets:
+			other.add_dot("ignite", element, 3.0, 2.0, true)
+		if knock_targets:
+			other.apply_knockback(center, 16.0)
+		hits += 1
+
+func _secondary_status_wave(effect: String, element: String, center: Vector2, radius: float, dps: float, duration: float, stackable := true) -> void:
+	var radius_sq := radius * radius
+	for other in enemies:
+		if other == null or not is_instance_valid(other):
+			continue
+		if center.distance_squared_to(other.global_position) <= radius_sq:
+			other.add_dot(effect, element, dps, duration, stackable)
+
+func _make_secondary_weapon(source_weapon: Dictionary, damage_mult: float, element: String) -> Dictionary:
+	var secondary_weapon := source_weapon.duplicate(true)
+	secondary_weapon["base_damage"] = max(1.0, float(source_weapon.get("base_damage", 1.0)) * damage_mult)
+	secondary_weapon["element"] = element
+	secondary_weapon["on_hit"] = []
+	return secondary_weapon
+
+func _add_player_shield(amount: float) -> void:
+	if amount <= 0.0:
+		return
+	player.shield = min(float(GameState.stats.get("max_qi_shield", 60)), player.shield + amount)
+
+func _find_split_target(center: Vector2, source_enemy: LingxuEnemy, radius: float) -> LingxuEnemy:
+	var best: LingxuEnemy = null
+	var best_d2 := radius * radius
+	for other in enemies:
+		if other == null or other == source_enemy or not is_instance_valid(other):
+			continue
+		var d2 := center.distance_squared_to(other.global_position)
+		if d2 <= best_d2:
+			best_d2 = d2
+			best = other
+	return best
 
 func _update_projectiles(delta: float) -> void:
 	projectiles = projectiles.filter(func(p): return is_instance_valid(p))
@@ -396,9 +537,10 @@ func _open_market(reason: String) -> void:
 	var cards := HBoxContainer.new()
 	cards.add_theme_constant_override("separation", 14)
 	box.add_child(cards)
-	for offer in _roll_offers(4):
+	var offers := _roll_offers(4)
+	for offer in offers:
 		cards.add_child(_offer_button(offer))
-	SignalsBus.market_offered.emit(cards)
+	SignalsBus.market_offered.emit(offers)
 
 func _roll_offers(count: int) -> Array:
 	var result: Array = []
