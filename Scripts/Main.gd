@@ -1,14 +1,15 @@
 extends Node
 
+const FontUtil := preload("res://Scripts/FontUtil.gd")
 const DISPLAY_FONT := preload("res://assets/fonts/MaShanZheng-Regular.ttf")
 const BODY_FONT := preload("res://assets/fonts/NotoSansCJKsc-Regular.otf")
 const ELEMENTS := ["metal", "wood", "water", "fire", "earth"]
 const ROOT_INFO := {
-	"metal": {"name": "金系御剑", "seal": "庚金剑印", "tag": "飞剑 / 贯穿 / 高频单体", "desc": "剑气凝霜，斩线破阵。", "icon": "icon_metal", "color": "#eaf6ff"},
-	"wood": {"name": "木系毒蛊", "seal": "青木蛊印", "tag": "中毒 / 瘟疫 / 持续 AoE", "desc": "藤息入脉，疫雾缠身。", "icon": "icon_wood", "color": "#7ccb5a"},
-	"water": {"name": "水系守护", "seal": "玄水寒印", "tag": "护盾 / 冰寒 / 减速", "desc": "寒潮护体，冰魄封敌。", "icon": "icon_water", "color": "#5aa9e0"},
-	"fire": {"name": "火系焚天", "seal": "赤焰符印", "tag": "灼烧 / 爆发 / 斩杀", "desc": "业火临锋，一念燎原。", "icon": "icon_fire", "color": "#f27348"},
-	"earth": {"name": "土系镇岳", "seal": "厚土岳印", "tag": "护甲 / 震荡 / 石化", "desc": "山河落印，镇邪成牢。", "icon": "icon_earth", "color": "#d9a441"}
+	"metal": {"name": "金·御剑", "seal": "庚金剑印", "tag": "飞剑 / 贯穿 / 高频单体", "desc": "剑气凝霜，斩线破阵。", "icon": "icon_metal", "color": "#eaf6ff"},
+	"wood": {"name": "木·毒蛊", "seal": "青木蛊印", "tag": "中毒 / 瘟疫 / 持续 AoE", "desc": "藤息入脉，疫雾缠身。", "icon": "icon_wood", "color": "#7ccb5a"},
+	"water": {"name": "水·守护", "seal": "玄水寒印", "tag": "护盾 / 冰寒 / 减速", "desc": "寒潮护体，冰魄封敌。", "icon": "icon_water", "color": "#5aa9e0"},
+	"fire": {"name": "火·焚天", "seal": "赤焰符印", "tag": "灼烧 / 爆发 / 斩杀", "desc": "业火临锋，一念燎原。", "icon": "icon_fire", "color": "#f27348"},
+	"earth": {"name": "土·镇岳", "seal": "厚土岳印", "tag": "护甲 / 震荡 / 石化", "desc": "山河落印，镇邪成牢。", "icon": "icon_earth", "color": "#d9a441"}
 }
 
 var current_screen: Node
@@ -26,6 +27,7 @@ var affinity_summary_label: Label
 var affinity_counter_label: Label
 
 func _ready() -> void:
+	FontUtil.ensure_fallback(DISPLAY_FONT, BODY_FONT)
 	_ensure_input_map()
 	show_main_menu()
 
@@ -201,7 +203,7 @@ func show_root_choice() -> void:
 	var random_btn := _small_button("随机抉择", Color("#5fe0c8"))
 	random_btn.pressed.connect(_random_roots)
 	row.add_child(random_btn)
-	confirm_button = _primary_button("确认入墟")
+	confirm_button = _primary_button("确认 · 入墟")
 	confirm_button.pressed.connect(_confirm_roots)
 	row.add_child(confirm_button)
 
