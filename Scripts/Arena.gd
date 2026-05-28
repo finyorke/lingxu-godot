@@ -70,6 +70,8 @@ var market_mode := "choice"
 var market_reason := ""
 var market_offers: Array = []
 var market_notice_text := ""
+var market_choice_completed := false
+var market_selected_offer_id := ""
 var next_spirit_shop_time := 60.0
 var weapon_drag_source := {}
 var suppress_next_weapon_detail := false
@@ -1363,7 +1365,9 @@ func _open_market(reason: String) -> void:
 	market_open = true
 	market_mode = "choice"
 	market_reason = reason
-	market_notice_text = ""
+	market_notice_text = "择一道机缘，整备完成后继续历练。"
+	market_choice_completed = false
+	market_selected_offer_id = ""
 	market_offers = _roll_offers(4, false)
 	_render_market()
 
@@ -1374,6 +1378,8 @@ func _open_spirit_shop() -> void:
 	market_mode = "spirit_shop"
 	market_reason = "云游商会"
 	market_notice_text = "可用拾取的灵石购买法器、道具和数值提升。"
+	market_choice_completed = false
+	market_selected_offer_id = ""
 	market_offers = _roll_offers(4, true)
 	_render_market()
 
@@ -1405,7 +1411,10 @@ func _render_market() -> void:
 	header.add_theme_constant_override("separation", 12)
 	box.add_child(header)
 	var title := Label.new()
-	title.text = "%s · 灵石购物" % market_reason if market_mode == "spirit_shop" else "%s · 四选一" % market_reason
+	if market_mode == "spirit_shop":
+		title.text = "%s · 灵石购物" % market_reason
+	else:
+		title.text = "%s · 已择定" % market_reason if market_choice_completed else "%s · 四选一" % market_reason
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_apply_display_font(title, 46, Color("#e8b259"), 3)
 	header.add_child(title)
@@ -1430,6 +1439,16 @@ func _render_market() -> void:
 		close.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		close.pressed.connect(_close_market)
 		header.add_child(close)
+	else:
+		var proceed := Button.new()
+		proceed.text = "继续历练"
+		proceed.custom_minimum_size = Vector2(116, 44)
+		proceed.focus_mode = Control.FOCUS_NONE
+		proceed.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		proceed.disabled = not market_choice_completed
+		proceed.tooltip_text = "先择一道机缘" if proceed.disabled else "关闭机缘界面，继续战斗"
+		proceed.pressed.connect(_close_market)
+		header.add_child(proceed)
 	market_notice_label = Label.new()
 	market_notice_label.text = market_notice_text
 	market_notice_label.custom_minimum_size = Vector2(0, 24)
@@ -1447,6 +1466,8 @@ func _render_market() -> void:
 func _close_market() -> void:
 	market_open = false
 	market_notice_text = ""
+	market_choice_completed = false
+	market_selected_offer_id = ""
 	_clear_detail()
 	overlay_layer.queue_free()
 	overlay_layer = CanvasLayer.new()
@@ -1544,6 +1565,11 @@ func _offer_button(offer: Dictionary) -> Button:
 	if kind_id == "weapon":
 		normal_bg = normal_bg.lerp(tier_color, 0.18)
 		normal_border = Color(tier_color.r, tier_color.g, tier_color.b, 0.82)
+	var choice_completed := market_mode == "choice" and market_choice_completed
+	var selected := choice_completed and str(offer.get("id", "")) == market_selected_offer_id
+	if selected:
+		normal_bg = normal_bg.lerp(Color("#e8b259"), 0.18)
+		normal_border = Color("#ffe9a8")
 	var b := Button.new()
 	b.custom_minimum_size = OFFER_CARD_SIZE
 	b.text = ""
@@ -1551,8 +1577,16 @@ func _offer_button(offer: Dictionary) -> Button:
 	b.add_theme_stylebox_override("normal", _stylebox(normal_bg, normal_border, 2 if kind_id == "weapon" else 1, 6))
 	b.add_theme_stylebox_override("hover", _stylebox(Color(0.045, 0.072, 0.076, 0.98).lerp(tier_color, 0.15 if kind_id == "weapon" else 0.0), Color("#e8b259"), 2, 6))
 	b.add_theme_stylebox_override("pressed", _stylebox(Color(0.055, 0.066, 0.055, 0.98), Color("#e8b259"), 2, 6))
-	b.add_theme_stylebox_override("disabled", _stylebox(Color(0.02, 0.024, 0.026, 0.82), Color(0.36, 0.38, 0.38, 0.42), 1, 6))
-	if not block_reason.is_empty():
+	if selected:
+		b.add_theme_stylebox_override("disabled", _stylebox(normal_bg, Color("#ffe9a8"), 3, 6))
+	else:
+		b.add_theme_stylebox_override("disabled", _stylebox(Color(0.02, 0.024, 0.026, 0.82), Color(0.36, 0.38, 0.38, 0.42), 1, 6))
+	b.disabled = choice_completed
+	if choice_completed:
+		b.tooltip_text = "已选择此机缘" if selected else "本次机缘已择定"
+		if not selected:
+			b.modulate = Color(0.58, 0.62, 0.62, 1.0)
+	elif not block_reason.is_empty():
 		b.modulate = Color(0.76, 0.78, 0.75, 1.0)
 		b.tooltip_text = block_reason
 	elif kind_id == "weapon" and not merge_target.is_empty():
@@ -1951,6 +1985,9 @@ func _element_color(element: String) -> Color:
 			return Color("#5fe0c8")
 
 func _choose_offer(offer: Dictionary) -> void:
+	if market_mode == "choice" and market_choice_completed:
+		_show_notice("本次机缘已择定，整备完成后继续历练")
+		return
 	var block_reason := _offer_block_reason(offer)
 	if not block_reason.is_empty():
 		_show_notice(block_reason)
@@ -1972,10 +2009,10 @@ func _choose_offer(offer: Dictionary) -> void:
 		_show_notice("槽位已满或数值已达上限")
 		return
 	SignalsBus.market_choice.emit(offer["id"])
-	market_open = false
-	overlay_layer.queue_free()
-	overlay_layer = CanvasLayer.new()
-	add_child(overlay_layer)
+	market_choice_completed = true
+	market_selected_offer_id = str(offer.get("id", ""))
+	market_notice_text = "已得%s，可整备法器与法宝。" % str(offer.get("name", offer.get("id", "")))
+	_render_market()
 	_update_hud()
 
 func _buy_shop_offer(offer: Dictionary) -> void:

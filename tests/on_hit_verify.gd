@@ -24,7 +24,31 @@ func _run() -> void:
 	await get_tree().process_frame
 	if not arena.market_open or arena.market_offers.size() != 4:
 		failures.append("choice market should render four offers")
-	arena._close_market()
+	var continue_button := _find_button_by_text(arena.overlay_layer, "继续历练")
+	if continue_button == null or not continue_button.disabled:
+		failures.append("choice market should require an offer before continuing")
+	var selected_offer: Dictionary = {}
+	for offer in arena.market_offers:
+		if arena._offer_block_reason(offer).is_empty():
+			selected_offer = offer
+			break
+	if selected_offer.is_empty():
+		failures.append("choice market should provide at least one selectable offer")
+	else:
+		arena._choose_offer(selected_offer)
+		await get_tree().process_frame
+		if not arena.market_open or not arena.market_choice_completed:
+			failures.append("choice market should stay open after selecting an offer")
+		if str(arena.market_selected_offer_id) != str(selected_offer.get("id", "")):
+			failures.append("choice market should remember the selected offer")
+		continue_button = _find_button_by_text(arena.overlay_layer, "继续历练")
+		if continue_button == null or continue_button.disabled:
+			failures.append("choice market continue button should enable after selecting an offer")
+		else:
+			continue_button.emit_signal("pressed")
+			await get_tree().process_frame
+			if arena.market_open:
+				failures.append("choice market continue button should resume the run")
 	GameState.stones = 50
 	arena._open_spirit_shop()
 	await get_tree().process_frame
@@ -117,3 +141,12 @@ func _count_sprites_with_texture(root: Node, texture: Texture2D) -> int:
 				count += 1
 		count += _count_sprites_with_texture(child, texture)
 	return count
+
+func _find_button_by_text(root: Node, text: String) -> Button:
+	for child in root.get_children():
+		if child is Button and child.text == text:
+			return child as Button
+		var found: Button = _find_button_by_text(child, text)
+		if found != null:
+			return found
+	return null
