@@ -2642,29 +2642,30 @@ func _show_notice(text: String) -> void:
 func _market_inventory_panel() -> Control:
 	var panel := PanelContainer.new()
 	panel.name = "MarketInventoryPanel"
-	panel.custom_minimum_size = Vector2(0, 150)
+	panel.custom_minimum_size = Vector2(0, 172)
 	panel.add_theme_stylebox_override("panel", _stylebox(Color(0.018, 0.031, 0.035, 0.9), Color(0.35, 0.88, 0.82, 0.32), 1, 6))
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 12)
 	margin.add_theme_constant_override("margin_right", 12)
-	margin.add_theme_constant_override("margin_top", 9)
-	margin.add_theme_constant_override("margin_bottom", 9)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
 	panel.add_child(margin)
 	var columns := HBoxContainer.new()
 	columns.add_theme_constant_override("separation", 18)
-	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	columns.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	columns.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	margin.add_child(columns)
 	columns.add_child(_market_weapon_column())
 	columns.add_child(_market_item_column())
 	if market_mode == "choice":
-		columns.add_child(_market_continue_button())
+		columns.add_child(_market_continue_frame())
 	return panel
 
 func _market_inventory_frame(node_name: String, content: Control, width: float) -> PanelContainer:
 	var frame := PanelContainer.new()
 	frame.name = node_name
 	frame.custom_minimum_size = Vector2(width, 0)
-	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	frame.add_theme_stylebox_override("panel", _stylebox(Color(0.014, 0.026, 0.03, 0.92), Color(0.35, 0.88, 0.82, 0.42), 1, 5))
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 12)
@@ -2675,37 +2676,39 @@ func _market_inventory_frame(node_name: String, content: Control, width: float) 
 	margin.add_child(content)
 	return frame
 
-func _market_column(title_text: String, width: float) -> VBoxContainer:
-	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(width, 0)
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	box.add_theme_constant_override("separation", 6)
-	var title := Label.new()
-	title.text = title_text
-	title.add_theme_font_size_override("font_size", 16)
-	title.add_theme_color_override("font_color", Color("#e8b259"))
-	box.add_child(title)
-	return box
+func _market_vertical_label(node_name: String, text: String, color: Color) -> Label:
+	var label := Label.new()
+	label.name = node_name
+	var characters: Array[String] = []
+	for i in range(text.length()):
+		characters.append(text.substr(i, 1))
+	label.text = "\n".join(characters)
+	label.custom_minimum_size = Vector2(34, 0)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_apply_display_font(label, 25, color, 2)
+	return label
 
 func _market_weapon_column() -> PanelContainer:
-	var box := _market_column("装备", 340)
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(438, 0)
+	box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_theme_constant_override("separation", 10)
 	var active := HBoxContainer.new()
-	active.add_theme_constant_override("separation", 6)
+	active.name = "MarketActiveWeaponRow"
+	active.add_theme_constant_override("separation", 8)
 	box.add_child(active)
+	active.add_child(_market_vertical_label("MarketWeaponLabel", "装备", Color("#e8b259")))
 	for i in range(4):
-		active.add_child(_market_weapon_slot_button("active", i, Vector2(42, 42)))
+		active.add_child(_market_weapon_slot_button("active", i, Vector2(56, 56)))
 	var reserve_line := HBoxContainer.new()
-	reserve_line.add_theme_constant_override("separation", 6)
+	reserve_line.name = "MarketReserveWeaponRow"
+	reserve_line.add_theme_constant_override("separation", 8)
 	box.add_child(reserve_line)
-	var reserve_label := Label.new()
-	reserve_label.text = "备炼"
-	reserve_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	reserve_label.add_theme_font_size_override("font_size", 13)
-	reserve_label.add_theme_color_override("font_color", Color("#c8a2ff"))
-	reserve_line.add_child(reserve_label)
+	reserve_line.add_child(_market_vertical_label("MarketReserveLabel", "备炼", Color("#c8a2ff")))
 	for i in range(GameState.weapon_reserve_capacity()):
-		reserve_line.add_child(_market_weapon_slot_button("reserve", i, Vector2(42, 42)))
-	return _market_inventory_frame("MarketWeaponFrame", box, 380)
+		reserve_line.add_child(_market_weapon_slot_button("reserve", i, Vector2(56, 56)))
+	return _market_inventory_frame("MarketWeaponFrame", box, 470)
 
 func _market_weapon_slot_button(place: String, index: int, size: Vector2) -> Button:
 	var slot := _hud_icon_button(size)
@@ -2730,12 +2733,19 @@ func _market_weapon_slot_button(place: String, index: int, size: Vector2) -> But
 	return slot
 
 func _market_item_column() -> PanelContainer:
-	var box := _market_column("道具 %d/%d" % [GameState.bag_used_slots(), int(GameState.stats.get("bag_capacity", 5))], 420)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 5)
+	var box := HBoxContainer.new()
+	box.custom_minimum_size = Vector2(374, 0)
+	box.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_theme_constant_override("separation", 8)
+	box.add_child(_market_vertical_label("MarketItemLabel", "道具", Color("#e8b259")))
+	var row := GridContainer.new()
+	row.name = "MarketItemSlotGrid"
+	row.columns = 5
+	row.add_theme_constant_override("h_separation", 8)
+	row.add_theme_constant_override("v_separation", 6)
 	box.add_child(row)
 	for i in range(int(GameState.stats.get("bag_capacity", 5))):
-		var slot := _hud_icon_button(Vector2(36, 36))
+		var slot := _hud_icon_button(Vector2(56, 56))
 		if i < GameState.bag.size():
 			var item: Dictionary = GameState.bag[i]
 			slot.icon = AssetDB.tex(_offer_art_id(str(item.get("id", ""))))
@@ -2748,18 +2758,41 @@ func _market_item_column() -> PanelContainer:
 		var slot_index := i
 		slot.pressed.connect(func(): _show_item_detail(slot_index))
 		row.add_child(slot)
-	return _market_inventory_frame("MarketItemFrame", box, 460)
+	return _market_inventory_frame("MarketItemFrame", box, 424)
+
+func _market_continue_frame() -> PanelContainer:
+	var frame := PanelContainer.new()
+	frame.name = "MarketContinueFrame"
+	frame.custom_minimum_size = Vector2(182, 122)
+	frame.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	frame.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	frame.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.035, 0.029, 0.022, 0.95), Color("#e8b259"), 2, 8, 10, 10))
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	frame.add_child(margin)
+	margin.add_child(_market_continue_button())
+	return frame
 
 func _market_continue_button() -> Button:
 	var proceed := Button.new()
 	proceed.name = "MarketContinueButton"
 	proceed.text = "继续历练"
-	proceed.custom_minimum_size = Vector2(140, 64)
-	proceed.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	proceed.custom_minimum_size = Vector2(154, 92)
+	proceed.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	proceed.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	proceed.focus_mode = Control.FOCUS_NONE
 	proceed.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	proceed.disabled = not market_choice_completed
 	proceed.tooltip_text = "先择一道机缘" if proceed.disabled else "确认选择并继续战斗"
+	_apply_display_font(proceed, 32, Color("#fff8e8"), 2)
+	proceed.add_theme_stylebox_override("normal", _stylebox(Color(0.08, 0.062, 0.035, 0.96), Color("#ffe39b"), 2, 7))
+	proceed.add_theme_stylebox_override("hover", _stylebox(Color(0.13, 0.092, 0.04, 0.98), Color("#fff4b8"), 3, 7))
+	proceed.add_theme_stylebox_override("pressed", _stylebox(Color(0.16, 0.105, 0.035, 1.0), Color("#e8b259"), 3, 7))
+	proceed.add_theme_stylebox_override("disabled", _stylebox(Color(0.035, 0.04, 0.04, 0.72), Color(0.55, 0.48, 0.34, 0.46), 1, 7))
+	proceed.add_theme_color_override("font_disabled_color", Color(0.74, 0.7, 0.6, 0.86))
 	proceed.pressed.connect(_confirm_market_choice)
 	return proceed
 
