@@ -21,6 +21,8 @@ const HUD_STAT_DEFS := [
 	{"key": "lifesteal", "label": "噬灵", "icon": "offer_bloodlust_jade"},
 	{"key": "luck", "label": "气运", "icon": "offer_lucky_coin"}
 ]
+const OFFER_CARD_SIZE := Vector2(320, 492)
+const OFFER_EFFECT_ROW_LIMIT := 4
 
 var player: YunxiPlayer
 var enemies: Array = []
@@ -645,7 +647,7 @@ func _roll_offers(count: int) -> Array:
 
 func _offer_button(offer: Dictionary) -> Button:
 	var b := Button.new()
-	b.custom_minimum_size = Vector2(320, 426)
+	b.custom_minimum_size = OFFER_CARD_SIZE
 	b.text = ""
 	b.focus_mode = Control.FOCUS_NONE
 	b.add_theme_stylebox_override("normal", _stylebox(Color(0.026, 0.04, 0.045, 0.96), Color(0.38, 0.9, 0.82, 0.38), 1, 6))
@@ -700,7 +702,7 @@ func _offer_button(offer: Dictionary) -> Button:
 	rows.add_theme_constant_override("separation", 5)
 	rows.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(rows)
-	for row in _offer_effect_rows(offer).slice(0, 4):
+	for row in _offer_effect_rows(offer).slice(0, OFFER_EFFECT_ROW_LIMIT):
 		rows.add_child(_effect_row_control(row))
 	b.pressed.connect(func(): _choose_offer(offer))
 	return b
