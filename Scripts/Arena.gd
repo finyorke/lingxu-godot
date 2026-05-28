@@ -55,6 +55,7 @@ var hp_value_label: Label
 var shield_value_label: Label
 var xp_value_label: Label
 var bag_title_label: Label
+var item_panel: PanelContainer
 var weapon_slot_buttons: Array = []
 var weapon_reserve_buttons: Array = []
 var item_slot_buttons: Array = []
@@ -137,19 +138,23 @@ func _setup_hud() -> void:
 	info_label.add_theme_color_override("font_color", Color("#eaf6ff"))
 	top.add_child(info_label)
 	var stat_panel := PanelContainer.new()
-	stat_panel.anchor_left = 0.84
-	stat_panel.anchor_top = 0.16
-	stat_panel.anchor_right = 0.985
-	stat_panel.anchor_bottom = 0.965
-	stat_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.018, 0.032, 0.038, 0.76), Color("#5fe0c8"), 1, 6))
+	stat_panel.anchor_left = 1.0
+	stat_panel.anchor_top = 0.0
+	stat_panel.anchor_right = 1.0
+	stat_panel.anchor_bottom = 0.0
+	stat_panel.offset_left = -246
+	stat_panel.offset_top = 150
+	stat_panel.offset_right = -28
+	stat_panel.offset_bottom = 790
+	stat_panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.018, 0.032, 0.038, 0.76), Color("#5fe0c8"), 1, 6, 6, 5))
 	root.add_child(stat_panel)
 	var stat_box := VBoxContainer.new()
-	stat_box.add_theme_constant_override("separation", 6)
+	stat_box.add_theme_constant_override("separation", 4)
 	stat_panel.add_child(stat_box)
 	var stat_title := Label.new()
 	stat_title.text = "数值"
 	stat_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stat_title.add_theme_font_size_override("font_size", 18)
+	stat_title.add_theme_font_size_override("font_size", 16)
 	stat_title.add_theme_color_override("font_color", Color("#e8b259"))
 	stat_box.add_child(stat_title)
 	stat_rows.clear()
@@ -158,65 +163,74 @@ func _setup_hud() -> void:
 		stat_box.add_child(stat_entry["panel"])
 		stat_rows.append(stat_entry)
 	var weapon_panel := PanelContainer.new()
-	weapon_panel.anchor_left = 0.02
-	weapon_panel.anchor_top = 0.765
-	weapon_panel.anchor_right = 0.35
-	weapon_panel.anchor_bottom = 0.965
-	weapon_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.02, 0.04, 0.045, 0.72), Color("#5fe0c8"), 1, 6))
+	weapon_panel.anchor_left = 1.0
+	weapon_panel.anchor_top = 0.0
+	weapon_panel.anchor_right = 1.0
+	weapon_panel.anchor_bottom = 0.0
+	weapon_panel.offset_left = -462
+	weapon_panel.offset_top = 24
+	weapon_panel.offset_right = -28
+	weapon_panel.offset_bottom = 132
+	weapon_panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.02, 0.04, 0.045, 0.72), Color("#5fe0c8"), 1, 6, 7, 5))
 	root.add_child(weapon_panel)
 	var weapon_box := VBoxContainer.new()
-	weapon_box.add_theme_constant_override("separation", 7)
+	weapon_box.add_theme_constant_override("separation", 6)
 	weapon_panel.add_child(weapon_box)
 	var weapon_title := Label.new()
 	weapon_title.text = "装备"
 	weapon_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	weapon_title.add_theme_font_size_override("font_size", 18)
+	weapon_title.add_theme_font_size_override("font_size", 16)
 	weapon_title.add_theme_color_override("font_color", Color("#e8b259"))
 	weapon_box.add_child(weapon_title)
 	var weapon_slots := HBoxContainer.new()
-	weapon_slots.add_theme_constant_override("separation", 10)
+	weapon_slots.add_theme_constant_override("separation", 7)
 	weapon_box.add_child(weapon_slots)
 	weapon_slot_buttons.clear()
 	for i in range(4):
-		var slot := _hud_icon_button(Vector2(62, 62))
+		var slot := _hud_icon_button(Vector2(48, 48))
 		weapon_slots.add_child(slot)
 		weapon_slot_buttons.append(slot)
 	var reserve_label := Label.new()
 	reserve_label.text = "备炼"
-	reserve_label.add_theme_font_size_override("font_size", 15)
+	reserve_label.add_theme_font_size_override("font_size", 14)
 	reserve_label.add_theme_color_override("font_color", Color("#c8a2ff"))
 	weapon_slots.add_child(reserve_label)
 	var reserve_slots := HBoxContainer.new()
-	reserve_slots.add_theme_constant_override("separation", 8)
+	reserve_slots.add_theme_constant_override("separation", 6)
 	weapon_slots.add_child(reserve_slots)
 	weapon_reserve_buttons.clear()
 	for i in range(GameState.weapon_reserve_capacity()):
-		var slot := _hud_icon_button(Vector2(62, 62))
+		var slot := _hud_icon_button(Vector2(48, 48))
 		reserve_slots.add_child(slot)
 		weapon_reserve_buttons.append(slot)
-	var item_panel := PanelContainer.new()
-	item_panel.anchor_left = 0.365
-	item_panel.anchor_top = 0.825
-	item_panel.anchor_right = 0.74
-	item_panel.anchor_bottom = 0.965
-	item_panel.add_theme_stylebox_override("panel", _stylebox(Color(0.035, 0.027, 0.042, 0.72), Color("#c8a2ff"), 1, 6))
+	item_panel = PanelContainer.new()
+	item_panel.anchor_left = 0.02
+	item_panel.anchor_top = 1.0
+	item_panel.anchor_right = 0.02
+	item_panel.anchor_bottom = 1.0
+	item_panel.offset_top = -112
+	item_panel.offset_right = 270
+	item_panel.offset_bottom = -28
+	item_panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.035, 0.027, 0.042, 0.72), Color("#c8a2ff"), 1, 6, 7, 5))
 	root.add_child(item_panel)
 	var item_box := VBoxContainer.new()
-	item_box.add_theme_constant_override("separation", 7)
+	item_box.add_theme_constant_override("separation", 6)
 	item_panel.add_child(item_box)
 	bag_title_label = Label.new()
 	bag_title_label.text = "道具"
 	bag_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	bag_title_label.add_theme_font_size_override("font_size", 18)
+	bag_title_label.add_theme_font_size_override("font_size", 16)
 	bag_title_label.add_theme_color_override("font_color", Color("#e8b259"))
 	item_box.add_child(bag_title_label)
-	var item_slots := HBoxContainer.new()
-	item_slots.add_theme_constant_override("separation", 7)
+	var item_slots := GridContainer.new()
+	item_slots.columns = 5
+	item_slots.add_theme_constant_override("h_separation", 6)
+	item_slots.add_theme_constant_override("v_separation", 6)
 	item_box.add_child(item_slots)
 	item_slot_buttons.clear()
 	var max_bag_slots: int = int(max(int(GameState.stats.get("bag_capacity", 5)), int(GameState.stats.get("bag_capacity_max", 10))))
 	for i in range(max_bag_slots):
-		var slot := _hud_icon_button(Vector2(46, 46))
+		var slot := _hud_icon_button(Vector2(42, 42))
 		item_slots.add_child(slot)
 		item_slot_buttons.append(slot)
 	message_label = Label.new()
@@ -271,13 +285,13 @@ func _hud_icon_button(size: Vector2) -> Button:
 
 func _stat_row_control(def: Dictionary) -> Dictionary:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(0, 42)
-	panel.add_theme_stylebox_override("panel", _stylebox(Color(0.03, 0.055, 0.06, 0.74), Color(0.35, 0.88, 0.82, 0.28), 1, 5))
+	panel.custom_minimum_size = Vector2(0, 34)
+	panel.add_theme_stylebox_override("panel", _compact_stylebox(Color(0.03, 0.055, 0.06, 0.74), Color(0.35, 0.88, 0.82, 0.28), 1, 5, 5, 3))
 	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 7)
+	line.add_theme_constant_override("separation", 5)
 	panel.add_child(line)
 	var icon := TextureRect.new()
-	icon.custom_minimum_size = Vector2(30, 30)
+	icon.custom_minimum_size = Vector2(24, 24)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -286,15 +300,15 @@ func _stat_row_control(def: Dictionary) -> Dictionary:
 	label.text = str(def.get("label", ""))
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_font_size_override("font_size", 13)
 	label.add_theme_color_override("font_color", Color("#cfe5e0"))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	line.add_child(label)
 	var value := Label.new()
-	value.custom_minimum_size = Vector2(72, 0)
+	value.custom_minimum_size = Vector2(52, 0)
 	value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	value.add_theme_font_size_override("font_size", 15)
+	value.add_theme_font_size_override("font_size", 13)
 	value.add_theme_color_override("font_color", Color("#eaf6ff"))
 	value.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	line.add_child(value)
@@ -339,6 +353,24 @@ func _stylebox(bg: Color, border: Color, border_width: int, radius: int) -> Styl
 	box.content_margin_bottom = 6
 	box.shadow_color = Color(0, 0, 0, 0.3)
 	box.shadow_size = 7
+	box.shadow_offset = Vector2(0, 2)
+	return box
+
+func _compact_stylebox(bg: Color, border: Color, border_width: int, radius: int, margin_x: int, margin_y: int) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = bg
+	box.border_color = border
+	box.set_border_width_all(border_width)
+	box.corner_radius_top_left = radius
+	box.corner_radius_top_right = radius
+	box.corner_radius_bottom_left = radius
+	box.corner_radius_bottom_right = radius
+	box.content_margin_left = margin_x
+	box.content_margin_right = margin_x
+	box.content_margin_top = margin_y
+	box.content_margin_bottom = margin_y
+	box.shadow_color = Color(0, 0, 0, 0.24)
+	box.shadow_size = 5
 	box.shadow_offset = Vector2(0, 2)
 	return box
 
@@ -1411,6 +1443,7 @@ func _update_hud() -> void:
 			_set_weapon_button_style(slot, 1, true)
 	var bag_capacity := int(GameState.stats.get("bag_capacity", 5))
 	var used_slots := _bag_used_slots()
+	item_panel.offset_top = -158 if bag_capacity > 5 else -112
 	bag_title_label.text = "道具 %d/%d" % [used_slots, bag_capacity]
 	for i in range(item_slot_buttons.size()):
 		var slot: Button = item_slot_buttons[i]
