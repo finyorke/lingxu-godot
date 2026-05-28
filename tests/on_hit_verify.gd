@@ -39,6 +39,28 @@ func _run() -> void:
 	var continue_button := _find_button_by_text(arena.overlay_layer, "继续历练")
 	if continue_button == null or not continue_button.disabled:
 		failures.append("choice market should require an offer before continuing")
+	var lock_buttons := _find_market_lock_buttons(arena.overlay_layer)
+	if lock_buttons.size() < arena.market_offers.size():
+		failures.append("choice market should render a lock button under each offer")
+	if arena.market_offers.size() > 0:
+		var locked_offer: Dictionary = arena.market_offers[0]
+		var locked_identity: String = arena._offer_identity(locked_offer)
+		arena._toggle_offer_lock(arena._offer_key(locked_offer))
+		await process_frame
+		if not bool(arena.market_offers[0].get("locked", false)):
+			failures.append("choice market should mark locked offers")
+		var choice_stones_before := int(game_state.get("stones"))
+		arena._refresh_spirit_shop()
+		await process_frame
+		if int(game_state.get("stones")) != choice_stones_before:
+			failures.append("choice market first refresh should be free")
+		if arena.market_offers.is_empty() or arena._offer_identity(arena.market_offers[0]) != locked_identity or not bool(arena.market_offers[0].get("locked", false)):
+			failures.append("choice market refresh should preserve locked offers in place")
+		game_state.stones = 20
+		arena._refresh_spirit_shop()
+		await process_frame
+		if int(game_state.get("stones")) >= 20:
+			failures.append("choice market second refresh should spend stones")
 	var selected_offer: Dictionary = {}
 	for offer in arena.market_offers:
 		if arena._offer_block_reason(offer).is_empty():
@@ -54,18 +76,25 @@ func _run() -> void:
 		if str(arena.market_selected_offer_id) != str(selected_offer.get("id", "")):
 			failures.append("choice market should remember the selected offer")
 		var chosen_offer := selected_offer
+		var chosen_key: String = arena.market_selected_offer_key
 		for offer in arena.market_offers:
 			if str(offer.get("id", "")) != str(selected_offer.get("id", "")) and arena._offer_block_reason(offer).is_empty():
 				arena._choose_offer(offer)
-				chosen_offer = offer
 				await process_frame
 				break
-		if str(arena.market_selected_offer_id) != str(chosen_offer.get("id", "")):
-			failures.append("choice market should allow changing the pending offer")
+		if str(arena.market_selected_offer_key) != chosen_key:
+			failures.append("choice market should not allow changing the selected offer")
 		for button in _find_market_offer_buttons(arena.overlay_layer):
-			if str(button.get_meta("market_offer_id", "")) != str(chosen_offer.get("id", "")) and button.disabled:
-				failures.append("choice market should leave other offer cards selectable after picking one")
+			if str(button.get_meta("market_offer_key", "")) != chosen_key and not button.disabled:
+				failures.append("choice market should disable other offer cards after picking one")
 				break
+		var found_enabled_lock := false
+		for lock_button in _find_market_lock_buttons(arena.overlay_layer):
+			if str(lock_button.get_meta("market_lock_offer_key", "")) != chosen_key and not lock_button.disabled:
+				found_enabled_lock = true
+				break
+		if not found_enabled_lock:
+			failures.append("choice market should keep lock buttons available for unselected offers")
 		var chosen_id := str(chosen_offer.get("id", ""))
 		var before_weapon_count := _weapon_count(chosen_id)
 		var before_weapon_tier_total := _weapon_tier_total(chosen_id)
@@ -94,9 +123,48 @@ func _run() -> void:
 	await process_frame
 	if not arena.market_open or arena.market_mode != "spirit_shop" or arena.market_offers.size() != 4:
 		failures.append("timed spirit shop should render four purchasable offers")
+	var shop_locked_identity := ""
+	if arena.market_offers.size() > 0:
+		var shop_locked_offer: Dictionary = arena.market_offers[0]
+		shop_locked_identity = arena._offer_identity(shop_locked_offer)
+		arena._toggle_offer_lock(arena._offer_key(shop_locked_offer))
+		await process_frame
 	arena._refresh_spirit_shop()
+	await process_frame
 	if game_state.stones >= 50:
 		failures.append("spirit shop refresh should spend stones")
+	if not shop_locked_identity.is_empty() and (arena.market_offers.is_empty() or arena._offer_identity(arena.market_offers[0]) != shop_locked_identity):
+		failures.append("spirit shop refresh should preserve locked offers")
+	game_state.stones = 100
+	var buy_offer: Dictionary = {}
+	var buy_index := -1
+	for i in range(arena.market_offers.size()):
+		var offer: Dictionary = arena.market_offers[i]
+		if i != 0 and arena._offer_block_reason(offer).is_empty():
+			buy_offer = offer
+			buy_index = i
+			break
+	if buy_offer.is_empty():
+		failures.append("spirit shop should provide a purchasable non-locked offer")
+	else:
+		var before_shop_identities := _offer_identities(arena, arena.market_offers)
+		arena._choose_offer(buy_offer)
+		await process_frame
+		if arena.market_offers.size() != 4:
+			failures.append("spirit shop should keep four offers after purchase")
+		if not shop_locked_identity.is_empty() and arena._offer_identity(arena.market_offers[0]) != shop_locked_identity:
+			failures.append("spirit shop purchase should leave locked offers untouched")
+		if buy_index >= 0 and buy_index < arena.market_offers.size() and arena._offer_identity(arena.market_offers[buy_index]) == before_shop_identities[buy_index]:
+			failures.append("spirit shop purchase should refill only the bought slot")
+		for i in range(arena.market_offers.size()):
+			if i != buy_index and i < before_shop_identities.size() and arena._offer_identity(arena.market_offers[i]) != before_shop_identities[i]:
+				failures.append("spirit shop purchase should not reroll untouched slots")
+				break
+	arena._close_market()
+	arena._open_spirit_shop()
+	await process_frame
+	if not shop_locked_identity.is_empty() and arena._offer_identity(arena.market_offers[0]) != shop_locked_identity:
+		failures.append("spirit shop should carry locked offers into the next shop")
 	arena._close_market()
 	await process_frame
 
@@ -202,6 +270,20 @@ func _find_market_offer_buttons(root: Node) -> Array:
 			buttons.append(child as Button)
 		buttons.append_array(_find_market_offer_buttons(child))
 	return buttons
+
+func _find_market_lock_buttons(root: Node) -> Array:
+	var buttons := []
+	for child in root.get_children():
+		if child is Button and child.has_meta("market_lock_offer_key"):
+			buttons.append(child as Button)
+		buttons.append_array(_find_market_lock_buttons(child))
+	return buttons
+
+func _offer_identities(arena: Node, offers: Array) -> Array:
+	var identities := []
+	for offer in offers:
+		identities.append(arena._offer_identity(offer))
+	return identities
 
 func _weapon_count(weapon_id: String) -> int:
 	var count := 0
