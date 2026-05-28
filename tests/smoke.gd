@@ -23,6 +23,7 @@ func _init() -> void:
 		"res://assets/enemies/sword_demon.png",
 		"res://assets/weapons/weapon_icons.png",
 		"res://assets/ui/offer_icons.png",
+		"res://assets/ui/offer_stat_attack_speed.png",
 		"res://assets/fx/combat_fx.png",
 		"res://assets/fonts/NotoSansCJKsc-Regular.otf"
 	]
@@ -34,9 +35,15 @@ func _init() -> void:
 	var asset_db = load("res://Scripts/autoload/AssetDB.gd").new()
 	root.add_child(asset_db)
 	asset_db.load_manifest()
-	for id in ["offer_guanri_sword", "offer_hantan_sword", "offer_turtle_charm", "offer_blood_return"]:
+	for id in ["offer_guanri_sword", "offer_hantan_sword", "offer_turtle_charm", "offer_stat_attack_speed", "offer_blood_return"]:
 		if not asset_db.manifest.has(id):
 			failures.append("missing market offer icon manifest entry %s" % id)
+	var attack_speed_info: Dictionary = asset_db.manifest.get("offer_stat_attack_speed", {})
+	if str(attack_speed_info.get("path", "")) != "res://assets/ui/offer_stat_attack_speed.png":
+		failures.append("offer_stat_attack_speed must use a standalone icon, not the offer atlas")
+	var attack_speed_tex: Texture2D = asset_db.tex("offer_stat_attack_speed")
+	if attack_speed_tex == null or attack_speed_tex.get_width() < 512 or attack_speed_tex.get_height() < 512:
+		failures.append("offer_stat_attack_speed texture did not load as a full standalone icon")
 	if failures.is_empty():
 		print("SMOKE OK: data, CJK font, generated assets, and main scene are present.")
 		quit(0)
