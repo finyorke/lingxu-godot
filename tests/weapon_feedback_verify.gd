@@ -10,6 +10,7 @@ func _run() -> void:
 	ConfigDB.load_all()
 	AssetDB.load_manifest()
 	GameState.start_run(["metal", "wood", "water", "fire", "earth"], [], "five")
+	GameState.stats["crit_chance"] = 0.0
 
 	var arena = load("res://Scenes/Arena.tscn").instantiate()
 	get_tree().root.add_child(arena)
@@ -39,8 +40,23 @@ func _run() -> void:
 	if not _has_node_named(arena, "WeaponArea_explode_exploding_charm"):
 		failures.append("explode secondary did not create source area feedback")
 
+	_clear_enemies(arena)
+	GameState.stats["fire_execute"] = true
+	GameState.stats["execute_threshold"] = 1.0
+	GameState.stats["execute_mult"] = 1.0
+	var crit_enemy := _spawn_test_enemy(arena, Vector2(210, -60), 20.0)
+	var crit_result: Dictionary = arena._hit_enemy(_weapon("ember_sword"), crit_enemy, crit_enemy.global_position, true)
+	if not bool(crit_result.get("is_crit", false)):
+		failures.append("forced fire execute did not produce a critical hit")
+	if not _has_node_named(arena, "CriticalBurstRing"):
+		failures.append("critical hit did not create burst ring feedback")
+	if not _has_node_named(arena, "CriticalCrossSlash"):
+		failures.append("critical hit did not create cross-slash feedback")
+	if not _has_node_named(arena, "CriticalHitText"):
+		failures.append("critical hit did not create floating text feedback")
+
 	if failures.is_empty():
-		print("WEAPON FEEDBACK OK: source badges and class-specific attack feedback verified.")
+		print("WEAPON FEEDBACK OK: source badges, class-specific attacks, and critical hit feedback verified.")
 		get_tree().quit(0)
 	else:
 		for failure in failures:

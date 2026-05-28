@@ -627,11 +627,14 @@ func _hit_enemy(weapon: Dictionary, enemy: LingxuEnemy, hit_pos := Vector2.ZERO,
 		return {}
 	var target_pos := enemy.global_position if hit_pos == Vector2.ZERO else hit_pos
 	var result := GameState.calculate_weapon_damage(weapon, enemy)
-	enemy.take_damage(float(result["amount"]), bool(result["is_crit"]), str(result["element"]))
+	var is_crit := bool(result.get("is_crit", false))
+	enemy.take_damage(float(result["amount"]), is_crit, str(result["element"]))
 	player.heal_from_lifesteal(float(result["amount"]))
 	_apply_weapon_on_hit(weapon, enemy, target_pos, result, allow_secondary)
 	_spawn_weapon_hit_feedback(weapon, target_pos, result, not allow_secondary)
-	SignalsBus.hud_request_hitstop.emit(0.02)
+	SignalsBus.hud_request_hitstop.emit(0.045 if is_crit else 0.02)
+	if is_crit:
+		SignalsBus.hud_request_shake.emit(6.0 if allow_secondary else 3.5, 0.09 if allow_secondary else 0.06)
 	return result
 
 func _apply_weapon_on_hit(weapon: Dictionary, enemy: LingxuEnemy, hit_pos: Vector2, result: Dictionary, allow_secondary := true) -> void:
@@ -905,16 +908,37 @@ func _spawn_fx(pos: Vector2, id: String, duration: float) -> void:
 func _spawn_weapon_hit_feedback(weapon: Dictionary, pos: Vector2, result: Dictionary, secondary := false) -> void:
 	var element := str(result.get("element", weapon.get("element", "metal")))
 	var color := AssetDB.color_for_element(element)
+	var is_crit := bool(result.get("is_crit", false))
 	var root := _feedback_root("WeaponHit_%s" % str(weapon.get("id", weapon.get("name", "weapon"))), pos, WEAPON_FEEDBACK_Z + 2)
 	var duration := WEAPON_HIT_FEEDBACK_DURATION * (0.72 if secondary else 1.0)
-	root.scale = Vector2.ONE * (0.78 if secondary else 1.0)
-	_add_feedback_fx(root, _weapon_feedback_fx_id(weapon, bool(result.get("is_crit", false))), Vector2.ZERO, 0.11 if secondary else 0.15, 0.72)
-	_add_feedback_ring(root, 14.0 if secondary else 21.0, color, 2.0 if secondary else 3.5, "SourceRing", 30)
+	var start_scale := 0.78 if secondary else 1.0
+	var end_scale := 1.14 if secondary else 1.36
+	var fx_scale := 0.11 if secondary else 0.15
+	var fx_alpha := 0.72
+	var ring_radius := 14.0 if secondary else 21.0
+	var ring_width := 2.0 if secondary else 3.5
+	var ring_color := color
+	var ring_steps := 30
+	if is_crit:
+		duration = max(duration * 1.35, 0.36 if secondary else 0.44)
+		start_scale = 0.88 if secondary else 1.08
+		end_scale = 1.34 if secondary else 1.62
+		fx_scale = 0.14 if secondary else 0.2
+		fx_alpha = 0.86
+		ring_radius = 18.0 if secondary else 28.0
+		ring_width = 3.0 if secondary else 5.0
+		ring_color = Color("#fff4b8").lerp(color, 0.25)
+		ring_steps = 36
+	root.scale = Vector2.ONE * start_scale
+	_add_feedback_fx(root, _weapon_feedback_fx_id(weapon, is_crit), Vector2.ZERO, fx_scale, fx_alpha)
+	_add_feedback_ring(root, ring_radius, ring_color, ring_width, "SourceRing", ring_steps)
 	var icon := _add_feedback_icon(root, weapon, Vector2(0, -20.0 if secondary else -27.0), 0.034 if secondary else 0.048, 0.9)
 	icon.rotation = -0.18
 	_add_hit_class_mark(root, str(weapon.get("class", "flying_sword")), color, secondary)
+	if is_crit:
+		_add_critical_hit_animation(root, color, secondary)
 	var tween := create_tween()
-	tween.tween_property(root, "scale", Vector2.ONE * (1.14 if secondary else 1.36), duration)
+	tween.tween_property(root, "scale", Vector2.ONE * end_scale, duration)
 	tween.parallel().tween_property(root, "modulate:a", 0.0, duration)
 	tween.tween_callback(root.queue_free)
 
@@ -1189,6 +1213,53 @@ func _add_hit_class_mark(parent: Node, klass: String, color: Color, secondary: b
 			_add_feedback_ring(parent, 20.0 if secondary else 28.0, color, 2.2, "HitGuardMark", 32)
 		_:
 			pass
+
+func _add_critical_hit_animation(parent: Node, color: Color, secondary: bool) -> void:
+	var gold := Color("#fff4b8")
+	var burst_color := gold.lerp(color, 0.18)
+	var ring_radius := 31.0 if secondary else 45.0
+	var outer := _add_feedback_ring(parent, ring_radius, burst_color, 3.0 if secondary else 5.0, "CriticalBurstRing", 56)
+	outer.default_color = Color(burst_color.r, burst_color.g, burst_color.b, 0.88)
+	var inner := _add_feedback_ring(parent, ring_radius * 0.56, gold.lerp(Color.WHITE, 0.28), 2.0 if secondary else 3.0, "CriticalInnerFlash", 44)
+	inner.default_color = Color(1.0, 0.96, 0.72, 0.72)
+	for i in range(2):
+		var slash := Line2D.new()
+		slash.name = "CriticalCrossSlash"
+		slash.width = 5.0 if secondary else 8.0
+		slash.default_color = Color(1.0, 0.95, 0.64, 0.78)
+		slash.add_point(Vector2(-ring_radius * 0.66, 0.0))
+		slash.add_point(Vector2(ring_radius * 0.66, 0.0))
+		slash.rotation = PI * 0.25 + float(i) * PI * 0.5
+		slash.z_index = 5
+		parent.add_child(slash)
+	var spark_count: int = 8 if secondary else 12
+	for i in range(spark_count):
+		var angle := float(i) / float(spark_count) * TAU
+		var spark := Line2D.new()
+		spark.name = "CriticalSpark"
+		spark.width = 2.0 if secondary else 3.0
+		spark.default_color = Color(1.0, 0.94, 0.52, 0.72)
+		var dir := Vector2(cos(angle), sin(angle))
+		spark.add_point(dir * ring_radius * 0.38)
+		spark.add_point(dir * ring_radius * 0.88)
+		spark.z_index = 4
+		parent.add_child(spark)
+	var label := Label.new()
+	label.name = "CriticalHitText"
+	label.text = "暴击"
+	label.size = Vector2(82, 42) if secondary else Vector2(108, 52)
+	label.pivot_offset = label.size * 0.5
+	label.position = Vector2(-label.size.x * 0.5, -72.0 if secondary else -88.0)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.z_index = 8
+	_apply_display_font(label, 28 if secondary else 38, Color("#fff4b8"), 4)
+	label.modulate = Color(1, 1, 1, 0.96)
+	parent.add_child(label)
+	var tween := create_tween()
+	tween.tween_property(label, "position:y", label.position.y - (16.0 if secondary else 24.0), 0.24 if secondary else 0.32)
+	tween.parallel().tween_property(label, "scale", Vector2.ONE * (1.15 if secondary else 1.22), 0.14)
+	tween.parallel().tween_property(label, "modulate:a", 0.0, 0.32 if secondary else 0.42)
 
 func _add_world_line(node_name: String, origin: Vector2, target_pos: Vector2, color: Color, width: float, alpha: float, duration: float) -> Line2D:
 	var line := Line2D.new()
