@@ -25,6 +25,7 @@ func _init() -> void:
 		"res://assets/weapons/weapon_icons.png",
 		"res://assets/weapons/icon_wood.png",
 		"res://assets/ui/offer_icons.png",
+		"res://assets/ui/hud_ornate_plate.png",
 		"res://assets/ui/offer_stat_attack_speed.png",
 		"res://assets/ui/offer_stat_engineering.png",
 		"res://assets/ui/offer_stat_range.png",
@@ -61,6 +62,12 @@ func _init() -> void:
 		var tex: Texture2D = asset_db.tex(id)
 		if tex == null or tex.get_width() < int(expected["min_width"]) or tex.get_height() < int(expected["min_height"]):
 			failures.append("%s texture did not load at expected standalone dimensions" % id)
+	var hud_backplate_info: Dictionary = asset_db.manifest.get("hud_ornate_plate", {})
+	if str(hud_backplate_info.get("path", "")) != "res://assets/ui/hud_ornate_plate.png":
+		failures.append("hud_ornate_plate must use the generated standalone HUD backplate")
+	var hud_backplate_tex: Texture2D = asset_db.tex("hud_ornate_plate")
+	if hud_backplate_tex == null or hud_backplate_tex.get_width() < 1600 or hud_backplate_tex.get_height() < 480:
+		failures.append("hud_ornate_plate texture did not load at expected high resolution")
 	var display_font: Font = load("res://assets/fonts/MaShanZheng-Regular.ttf")
 	var body_font: Font = load("res://assets/fonts/NotoSansCJKsc-Regular.otf")
 	if not body_font.has_char(0x00b7):
