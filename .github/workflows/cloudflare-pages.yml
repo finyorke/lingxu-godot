@@ -1,0 +1,349 @@
+name: Cloudflare Pages
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      cloudflare_branch:
+        description: Optional Cloudflare Pages branch name. Leave empty to use main, the current branch, or pr-<number>.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: cloudflare-pages-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.6.2-stable
+  GODOT_TEMPLATE_VERSION: 4.6.2.stable
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot and export templates
+        run: |
+          wget -q https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip
+          unzip -q Godot_v${GODOT_VERSION}_linux.x86_64.zip
+          sudo mv Godot_v${GODOT_VERSION}_linux.x86_64 /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+          wget -q https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_export_templates.tpz
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}
+          unzip -q Godot_v${GODOT_VERSION}_export_templates.tpz
+          mv templates/* ~/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}/
+
+      - name: Install font subset tool
+        run: |
+          python3 -m venv build/fonttools-venv
+          build/fonttools-venv/bin/python -m pip install --upgrade pip
+          build/fonttools-venv/bin/python -m pip install fonttools
+
+      - name: Prepare font subsets for Web export
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/cloudflare
+
+          find Data Scenes Scripts assets -type f \
+            \( -name '*.gd' -o -name '*.json' -o -name '*.tscn' -o -name '*.tres' -o -name '*.import' \) \
+            -print0 \
+            | xargs -0 cat > build/cloudflare/font-subset-text.txt
+
+          cat >> build/cloudflare/font-subset-text.txt <<'EOF'
+          御剑灵墟 灵根 五行 金木水火土 风雷冰毒 剑 法器 商店 继续 开始 暂停 失败 胜利
+          ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
+          !@#$%^&*()_+-=[]{};':",.<>/?\|`~，。？！：；、“”‘’（）《》【】—…
+          EOF
+
+          build/fonttools-venv/bin/python -m fontTools.subset assets/fonts/NotoSansCJKsc-Regular.otf \
+            --text-file=build/cloudflare/font-subset-text.txt \
+            --layout-features='*' \
+            --glyph-names \
+            --symbol-cmap \
+            --legacy-cmap \
+            --notdef-glyph \
+            --notdef-outline \
+            --recommended-glyphs \
+            --output-file=build/cloudflare/NotoSansCJKsc-Regular.otf
+
+          build/fonttools-venv/bin/python -m fontTools.subset assets/fonts/MaShanZheng-Regular.ttf \
+            --text-file=build/cloudflare/font-subset-text.txt \
+            --layout-features='*' \
+            --glyph-names \
+            --symbol-cmap \
+            --legacy-cmap \
+            --notdef-glyph \
+            --notdef-outline \
+            --recommended-glyphs \
+            --output-file=build/cloudflare/MaShanZheng-Regular.ttf
+
+          mv build/cloudflare/NotoSansCJKsc-Regular.otf assets/fonts/NotoSansCJKsc-Regular.otf
+          mv build/cloudflare/MaShanZheng-Regular.ttf assets/fonts/MaShanZheng-Regular.ttf
+          ls -lh assets/fonts/NotoSansCJKsc-Regular.otf assets/fonts/MaShanZheng-Regular.ttf
+
+      - name: Import assets
+        run: godot --headless --import --quit
+
+      - name: Smoke test
+        run: godot --headless --script tests/smoke.gd
+
+      - name: Export Web build
+        run: |
+          rm -rf build/web
+          mkdir -p build/web
+          godot --headless --export-release Web build/web/index.html
+          echo "${GITHUB_SHA}" > build/web/version.txt
+
+      - name: Prepare Cloudflare Pages asset handling
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gzip -9 -n < build/web/index.wasm > build/web/index.wasm.gz
+          mv build/web/index.wasm.gz build/web/index.wasm
+
+          cat > build/web/_worker.js <<'EOF'
+          export default {
+            async fetch(request, env) {
+              const url = new URL(request.url);
+              const response = await env.ASSETS.fetch(request);
+
+              if (url.pathname === "/index.wasm") {
+                const headers = new Headers(response.headers);
+                headers.set("Content-Type", "application/wasm");
+                headers.set("Content-Encoding", "gzip");
+                headers.set("Cache-Control", "public, max-age=31536000, immutable");
+                return new Response(response.body, {
+                  status: response.status,
+                  statusText: response.statusText,
+                  headers,
+                  encodeBody: "manual",
+                });
+              }
+
+              if (url.pathname === "/index.pck") {
+                const headers = new Headers(response.headers);
+                headers.set("Content-Type", "application/octet-stream");
+                headers.set("Cache-Control", "public, max-age=31536000, immutable");
+                return new Response(response.body, {
+                  status: response.status,
+                  statusText: response.statusText,
+                  headers,
+                });
+              }
+
+              return response;
+            },
+          };
+          EOF
+
+      - name: Check Cloudflare Pages file limits
+        shell: bash
+        run: |
+          set -euo pipefail
+          max_bytes=$((25 * 1024 * 1024))
+          oversized=0
+
+          {
+            echo "## Cloudflare Pages file size check"
+            echo
+            echo "Cloudflare Pages accepts site assets up to 25 MiB per file."
+            echo
+            echo "Largest exported files:"
+            echo
+            echo '```text'
+            find build/web -type f -printf '%s\t%p\n' \
+              | sort -nr \
+              | head -n 10 \
+              | awk -F '\t' '{ printf "%.2f MiB\t%s\n", $1 / 1024 / 1024, $2 }'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          while IFS= read -r -d '' file; do
+            size=$(stat -c%s "$file")
+            if [ "$size" -gt "$max_bytes" ]; then
+              oversized=1
+              mib=$(awk "BEGIN { printf \"%.2f\", $size / 1024 / 1024 }")
+              echo "::error file=${file},title=Cloudflare Pages file too large::${file} is ${mib} MiB. The single-file limit is 25 MiB."
+            fi
+          done < <(find build/web -type f -print0)
+
+          if [ "$oversized" -ne 0 ]; then
+            {
+              echo
+              echo "One or more files are larger than 25 MiB. Compress or split the asset, reduce the Godot export size, or move large static files to Cloudflare R2 before deploying."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Upload Web build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-web-cloudflare-pages
+          path: build/web
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    steps:
+      - name: Download Web build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: godot-web-cloudflare-pages
+          path: build/web
+
+      - name: Resolve Cloudflare Pages branch
+        id: branch
+        shell: bash
+        env:
+          MANUAL_BRANCH: ${{ github.event.inputs.cloudflare_branch || '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$MANUAL_BRANCH" ]; then
+            branch="$MANUAL_BRANCH"
+          elif [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            branch="pr-${PR_NUMBER}"
+          else
+            branch="${GITHUB_REF_NAME}"
+          fi
+
+          echo "name=${branch}" >> "$GITHUB_OUTPUT"
+          echo "Cloudflare Pages branch: ${branch}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check Cloudflare deployment configuration
+        id: config
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_PROJECT_NAME: ${{ vars.CLOUDFLARE_PROJECT_NAME || 'lingxu-godot' }}
+        run: |
+          set -euo pipefail
+          missing=0
+
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error title=Missing GitHub secret::Set CLOUDFLARE_API_TOKEN in Settings > Secrets and variables > Actions."
+            missing=1
+          fi
+
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error title=Missing GitHub secret::Set CLOUDFLARE_ACCOUNT_ID in Settings > Secrets and variables > Actions."
+            missing=1
+          fi
+
+          if [ -z "$CLOUDFLARE_PROJECT_NAME" ]; then
+            echo "::error title=Missing GitHub variable::Set CLOUDFLARE_PROJECT_NAME, or keep the default project name lingxu-godot."
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            {
+              echo "## Cloudflare setup required"
+              echo
+              echo "Before this workflow can deploy, configure these repository values:"
+              echo
+              echo "- Secret: CLOUDFLARE_API_TOKEN"
+              echo "- Secret: CLOUDFLARE_ACCOUNT_ID"
+              echo "- Variable: CLOUDFLARE_PROJECT_NAME, defaulting to lingxu-godot"
+              echo
+              echo "See Docs/CLOUDFLARE_PAGES_WORKFLOW.md for the exact Cloudflare and GitHub steps."
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+              echo "::warning title=Cloudflare deploy skipped::Configure CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID to enable PR preview deployments."
+              exit 0
+            fi
+
+            exit 1
+          fi
+
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Cloudflare Pages
+        if: steps.config.outputs.configured == 'true'
+        id: deploy
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_PROJECT_NAME: ${{ vars.CLOUDFLARE_PROJECT_NAME || 'lingxu-godot' }}
+          CLOUDFLARE_BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
+          set -euo pipefail
+          output_file="$(mktemp)"
+
+          npx --yes wrangler@4 pages deploy build/web \
+            --project-name "$CLOUDFLARE_PROJECT_NAME" \
+            --branch "$CLOUDFLARE_BRANCH" \
+            | tee "$output_file"
+
+          deployment_url="$(grep -Eo 'https://[^ ]+\.pages\.dev[^ ]*' "$output_file" | head -n 1 || true)"
+          echo "url=${deployment_url}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Cloudflare Pages deployment"
+            echo
+            echo "- Project: ${CLOUDFLARE_PROJECT_NAME}"
+            echo "- Branch: ${CLOUDFLARE_BRANCH}"
+            if [ -n "$deployment_url" ]; then
+              echo "- URL: ${deployment_url}"
+            else
+              echo "- URL: Check the Wrangler output above."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment preview URL on pull request
+        if: github.event_name == 'pull_request' && steps.deploy.outputs.url != ''
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+          CLOUDFLARE_BRANCH: ${{ steps.branch.outputs.name }}
+        with:
+          script: |
+            const marker = '<!-- cloudflare-pages-preview -->';
+            const body = [
+              marker,
+              `Cloudflare Pages preview for \`${process.env.CLOUDFLARE_BRANCH}\`: ${process.env.DEPLOYMENT_URL}`,
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.data.find((comment) =>
+              comment.user.type === 'Bot' && comment.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
