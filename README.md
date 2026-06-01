@@ -9,6 +9,11 @@ C:\Users\fengbo\Developer\godot\Godot_v4.6.2-stable_win64_console.exe --headless
 C:\Users\fengbo\Developer\godot\Godot_v4.6.2-stable_win64_console.exe --headless --path . --export-release Web build/web/index.html
 ```
 
+## Deployment
+
+- Cloudflare Pages GitHub Actions workflow: `Docs/CLOUDFLARE_PAGES_WORKFLOW.md`
+- Existing GitHub Pages preview workflow remains separate in `.github/workflows/web-preview.yml`.
+
 ## Current Slice
 
 - Main menu, root selection, root sealing from 0 to 2 roots, and arena entry.
