@@ -1,6 +1,6 @@
 # Cloudflare Pages 自动部署工作流
 
-这个项目的 Cloudflare Pages 发布使用 GitHub Actions 构建 Godot Web 产物，再通过 Wrangler Direct Upload 上传到已经存在的 Cloudflare Pages 项目。
+这个项目的 Cloudflare Pages 发布使用 GitHub Actions 构建 Godot Web 产物，再通过 Wrangler Direct Upload 上传到 Cloudflare Pages。workflow 会用 `CLOUDFLARE_API_TOKEN` 解析 Cloudflare account，并在 Pages 项目不存在时自动创建项目。
 
 当前工作流文件是 `.github/workflows/cloudflare-pages.yml`。GitHub Pages 的发布流程属于另一条线，不在这个 Cloudflare 工作流里混合处理。
 
@@ -22,11 +22,13 @@
 - Cloudflare 账号里可以管理目标 Pages 项目的权限。
 - 可以创建 Cloudflare Account API Token 的权限。
 
-Cloudflare 侧需要已经存在 Pages 项目：
+Cloudflare 侧 Pages 项目不需要提前手动创建。workflow 会在部署前检查项目是否存在，不存在时自动创建：
 
 - Project name：`lingxu-godot`
 - Production branch：`main`
 - 如果要保护 preview，需要继续使用 Cloudflare Zero Trust / Access 配置。Access application 和 policy 不在每次游戏发布时重建。
+
+如果 API token 可以看到多个 Cloudflare account，workflow 不会猜测使用哪一个；这种情况下需要显式配置 `CLOUDFLARE_ACCOUNT_ID`。
 
 ## GitHub 配置项
 
@@ -39,15 +41,20 @@ Cloudflare 侧需要已经存在 Pages 项目：
 | Name | 类型 | 用途 |
 | --- | --- | --- |
 | `CLOUDFLARE_API_TOKEN` | Secret | Wrangler 用它登录 Cloudflare 并上传 Pages 部署 |
-| `CLOUDFLARE_ACCOUNT_ID` | Secret | 指定部署到哪个 Cloudflare account |
 
 新增这个 repository variable：
 
 | Name | 类型 | 用途 |
 | --- | --- | --- |
 | `CLOUDFLARE_PROJECT_NAME` | Variable | Pages 项目名，当前值是 `lingxu-godot` |
+| `CLOUDFLARE_PRODUCTION_BRANCH` | Variable | 自动创建 Pages 项目时使用的 production branch，默认 `main` |
 
-`CLOUDFLARE_PROJECT_NAME` 不是敏感信息；如果不配置，workflow 会默认使用 `lingxu-godot`。
+`CLOUDFLARE_PROJECT_NAME` 和 `CLOUDFLARE_PRODUCTION_BRANCH` 不是敏感信息；如果不配置，workflow 会默认使用 `lingxu-godot` 和 `main`。
+
+`CLOUDFLARE_ACCOUNT_ID` 现在是可选项，可以配成 repository secret，也可以配成 repository variable。workflow 会先读取它；如果没配置，就调用 Cloudflare `/accounts` API：
+
+- 只返回 1 个 account：自动使用这个 account id。
+- 返回 0 个 account、多个 account，或 token 无法列出 account：workflow 失败并要求配置 `CLOUDFLARE_ACCOUNT_ID`。
 
 ## 如何获取 Cloudflare API Token
 
@@ -65,7 +72,7 @@ Cloudflare 侧需要已经存在 Pages 项目：
 7. Account Resources 选择 `Include`，并只选择这个项目所在的 Cloudflare account。
 8. 生成 token 后立即复制一次，保存到 GitHub secret `CLOUDFLARE_API_TOKEN`。
 
-这个 token 只负责 Pages 上传部署。Zero Trust / Access 的 application 和 policy 建议作为基础设施单独管理，不要放到每次游戏发布 workflow 里。
+这个 token 只负责解析 account、自动创建 Pages 项目、上传 Pages 部署。Zero Trust / Access 的 application 和 policy 建议作为基础设施单独管理，不要放到每次游戏发布 workflow 里。
 
 ## 如何获取 Cloudflare Account ID
 
@@ -74,15 +81,49 @@ Cloudflare 侧需要已经存在 Pages 项目：
 1. 打开 Cloudflare Dashboard。
 2. 进入目标账号或任意该账号下的站点 / Workers & Pages 页面。
 3. 在 Dashboard 右侧或 Overview 区域找到 `Account ID`。
-4. 复制后保存到 GitHub secret `CLOUDFLARE_ACCOUNT_ID`。
+4. 复制后按需保存到 GitHub secret 或 variable `CLOUDFLARE_ACCOUNT_ID`。
 
-也可以在本机已登录 Wrangler 时运行：
+如果只配置了 `CLOUDFLARE_API_TOKEN`，workflow 会自动尝试获取 account ID。你也可以用 API token 手动查询：
+
+```powershell
+curl.exe https://api.cloudflare.com/client/v4/accounts `
+  -H "Authorization: Bearer <你的 Cloudflare API Token>"
+```
+
+返回的 `result[].id` 就是 account id。也可以在本机已登录 Wrangler 时运行：
 
 ```powershell
 npx wrangler whoami
 ```
 
 从输出里确认目标账号，再复制对应 account ID。
+
+只有在 API token 对多个 account 都有权限，或者 token 无法调用 `/accounts` 时，才需要把这个值配置为 `CLOUDFLARE_ACCOUNT_ID`。
+
+## 自动创建 Pages 项目
+
+部署前 workflow 会调用 Cloudflare API 检查：
+
+```text
+GET /client/v4/accounts/<account_id>/pages/projects/<project_name>
+```
+
+如果返回 404，workflow 会自动创建 Direct Upload Pages 项目：
+
+```text
+POST /client/v4/accounts/<account_id>/pages/projects
+```
+
+请求里会使用当前的 project name 和 production branch：
+
+```json
+{
+  "name": "lingxu-godot",
+  "production_branch": "main"
+}
+```
+
+创建成功后，同一次 workflow 会继续执行 `wrangler pages deploy build/web --project-name <project_name> --branch <branch>`。所以首次部署只需要提前配置 `CLOUDFLARE_API_TOKEN`；account 无法唯一解析时再补 `CLOUDFLARE_ACCOUNT_ID`。
 
 ## 文件大小提醒
 
@@ -115,5 +156,7 @@ Cloudflare Pages 单个站点文件限制是 25 MiB。工作流在上传前会�
 
 - Cloudflare Pages Direct Upload: https://developers.cloudflare.com/pages/get-started/direct-upload/
 - Direct Upload with continuous integration: https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/
+- Cloudflare Accounts API: https://developers.cloudflare.com/api/resources/accounts/methods/list/
+- Cloudflare Pages Create Project API: https://developers.cloudflare.com/api/resources/pages/subresources/projects/methods/create/
 - Cloudflare Pages limits: https://developers.cloudflare.com/pages/platform/limits/
 - GitHub Actions secrets: https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets

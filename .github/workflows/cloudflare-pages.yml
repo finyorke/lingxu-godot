@@ -223,29 +223,34 @@ jobs:
           echo "name=${branch}" >> "$GITHUB_OUTPUT"
           echo "Cloudflare Pages branch: ${branch}" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Check Cloudflare deployment configuration
+      - name: Resolve Cloudflare deployment configuration
         id: config
         shell: bash
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID_INPUT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID || '' }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_PROJECT_NAME: ${{ vars.CLOUDFLARE_PROJECT_NAME || 'lingxu-godot' }}
+          CLOUDFLARE_PRODUCTION_BRANCH: ${{ vars.CLOUDFLARE_PRODUCTION_BRANCH || 'main' }}
         run: |
           set -euo pipefail
           missing=0
-
-          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "::error title=Missing GitHub secret::Set CLOUDFLARE_API_TOKEN in Settings > Secrets and variables > Actions."
-            missing=1
+          missing_annotation="error"
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            missing_annotation="warning"
           fi
 
-          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::error title=Missing GitHub secret::Set CLOUDFLARE_ACCOUNT_ID in Settings > Secrets and variables > Actions."
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::${missing_annotation} title=Missing GitHub secret::Set CLOUDFLARE_API_TOKEN in Settings > Secrets and variables > Actions."
             missing=1
           fi
 
           if [ -z "$CLOUDFLARE_PROJECT_NAME" ]; then
-            echo "::error title=Missing GitHub variable::Set CLOUDFLARE_PROJECT_NAME, or keep the default project name lingxu-godot."
+            echo "::${missing_annotation} title=Missing GitHub variable::Set CLOUDFLARE_PROJECT_NAME, or keep the default project name lingxu-godot."
+            missing=1
+          fi
+
+          if [ -z "$CLOUDFLARE_PRODUCTION_BRANCH" ]; then
+            echo "::${missing_annotation} title=Missing GitHub variable::Set CLOUDFLARE_PRODUCTION_BRANCH, or keep the default production branch main."
             missing=1
           fi
 
@@ -253,23 +258,177 @@ jobs:
             {
               echo "## Cloudflare setup required"
               echo
-              echo "Before this workflow can deploy, configure these repository values:"
+              echo "Before this workflow can deploy, configure the required repository value:"
               echo
               echo "- Secret: CLOUDFLARE_API_TOKEN"
-              echo "- Secret: CLOUDFLARE_ACCOUNT_ID"
+              echo
+              echo "Optional repository values:"
+              echo
+              echo "- Secret or variable: CLOUDFLARE_ACCOUNT_ID, only needed when the token cannot resolve exactly one Cloudflare account"
               echo "- Variable: CLOUDFLARE_PROJECT_NAME, defaulting to lingxu-godot"
+              echo "- Variable: CLOUDFLARE_PRODUCTION_BRANCH, defaulting to main"
               echo
               echo "See Docs/CLOUDFLARE_PAGES_WORKFLOW.md for the exact Cloudflare and GitHub steps."
             } >> "$GITHUB_STEP_SUMMARY"
 
             echo "configured=false" >> "$GITHUB_OUTPUT"
             if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-              echo "::warning title=Cloudflare deploy skipped::Configure CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID to enable PR preview deployments."
+              echo "::warning title=Cloudflare deploy skipped::Configure CLOUDFLARE_API_TOKEN to enable PR preview deployments."
               exit 0
             fi
 
             exit 1
           fi
+
+          account_id="$CLOUDFLARE_ACCOUNT_ID_INPUT"
+          if [ -z "$account_id" ]; then
+            accounts_response="$(mktemp)"
+            curl -sS \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4/accounts" \
+              > "$accounts_response"
+
+            if ! account_id="$(python3 - "$accounts_response" <<'PY'
+          import json
+          import sys
+
+          try:
+              with open(sys.argv[1], encoding="utf-8") as handle:
+                  payload = json.load(handle)
+          except Exception as exc:
+              print(f"Cloudflare accounts response was not valid JSON: {exc}", file=sys.stderr)
+              raise SystemExit(1)
+
+          if not payload.get("success"):
+              errors = payload.get("errors") or []
+              messages = "; ".join(error.get("message", "Unknown Cloudflare API error") for error in errors)
+              print(messages or "Cloudflare accounts API did not return success.", file=sys.stderr)
+              raise SystemExit(1)
+
+          accounts = payload.get("result") or []
+          if len(accounts) == 1 and accounts[0].get("id"):
+              print(accounts[0]["id"])
+              raise SystemExit(0)
+
+          if not accounts:
+              print("No Cloudflare accounts are visible to this API token.", file=sys.stderr)
+          else:
+              print("Multiple Cloudflare accounts are visible to this API token:", file=sys.stderr)
+              for account in accounts:
+                  print(f"  {account.get('id', '')}\t{account.get('name', '')}", file=sys.stderr)
+          raise SystemExit(1)
+          PY
+            )"; then
+              echo "::error title=Unable to resolve Cloudflare account::Set CLOUDFLARE_ACCOUNT_ID as a repository secret or variable, or use a token that can list exactly one account."
+              exit 1
+            fi
+          fi
+
+          project_url="https://api.cloudflare.com/client/v4/accounts/${account_id}/pages/projects/${CLOUDFLARE_PROJECT_NAME}"
+          project_response="$(mktemp)"
+          project_status="$(
+            curl -sS \
+              -w "%{http_code}" \
+              -o "$project_response" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "$project_url"
+          )"
+
+          if [ "$project_status" = "200" ]; then
+            project_action="found"
+          elif [ "$project_status" = "404" ]; then
+            create_payload="$(
+              python3 - <<'PY'
+          import json
+          import os
+
+          print(json.dumps({
+              "name": os.environ["CLOUDFLARE_PROJECT_NAME"],
+              "production_branch": os.environ["CLOUDFLARE_PRODUCTION_BRANCH"],
+          }))
+          PY
+            )"
+            project_status="$(
+              curl -sS \
+                -w "%{http_code}" \
+                -o "$project_response" \
+                -X POST \
+                -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data "$create_payload" \
+                "https://api.cloudflare.com/client/v4/accounts/${account_id}/pages/projects"
+            )"
+
+            if [ "$project_status" != "200" ] && [ "$project_status" != "201" ]; then
+              python3 - "$project_response" <<'PY'
+          import json
+          import sys
+
+          try:
+              payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          except Exception:
+              print("Cloudflare project creation failed and the response was not JSON.", file=sys.stderr)
+              raise SystemExit(0)
+
+          errors = payload.get("errors") or []
+          for error in errors:
+              print(error.get("message", "Unknown Cloudflare API error"), file=sys.stderr)
+          PY
+              echo "::error title=Unable to create Cloudflare Pages project::Check that CLOUDFLARE_API_TOKEN has Pages Write/Edit access for the resolved account."
+              exit 1
+            fi
+
+            if ! python3 - "$project_response" <<'PY'
+          import json
+          import sys
+
+          payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          if not payload.get("success"):
+              errors = payload.get("errors") or []
+              for error in errors:
+                  print(error.get("message", "Unknown Cloudflare API error"), file=sys.stderr)
+              raise SystemExit(1)
+          PY
+            then
+              echo "::error title=Unable to create Cloudflare Pages project::Cloudflare API returned an unsuccessful response."
+              exit 1
+            fi
+
+            project_action="created"
+          else
+            python3 - "$project_response" <<'PY'
+          import json
+          import sys
+
+          try:
+              payload = json.load(open(sys.argv[1], encoding="utf-8"))
+          except Exception:
+              print("Cloudflare project lookup failed and the response was not JSON.", file=sys.stderr)
+              raise SystemExit(0)
+
+          errors = payload.get("errors") or []
+          for error in errors:
+              print(error.get("message", "Unknown Cloudflare API error"), file=sys.stderr)
+          PY
+            echo "::error title=Unable to verify Cloudflare Pages project::Check the resolved account ID and token permissions."
+            exit 1
+          fi
+
+          {
+            echo "CLOUDFLARE_ACCOUNT_ID=${account_id}"
+            echo "CLOUDFLARE_PROJECT_NAME=${CLOUDFLARE_PROJECT_NAME}"
+            echo "CLOUDFLARE_PRODUCTION_BRANCH=${CLOUDFLARE_PRODUCTION_BRANCH}"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "## Cloudflare deployment configuration"
+            echo
+            echo "- Account ID: ${account_id}"
+            echo "- Project: ${CLOUDFLARE_PROJECT_NAME} (${project_action})"
+            echo "- Production branch: ${CLOUDFLARE_PRODUCTION_BRANCH}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
           echo "configured=true" >> "$GITHUB_OUTPUT"
 
@@ -278,9 +437,7 @@ jobs:
         id: deploy
         shell: bash
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_PROJECT_NAME: ${{ vars.CLOUDFLARE_PROJECT_NAME || 'lingxu-godot' }}
           CLOUDFLARE_BRANCH: ${{ steps.branch.outputs.name }}
         run: |
           set -euo pipefail
