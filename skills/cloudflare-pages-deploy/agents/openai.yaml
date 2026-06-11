@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cloudflare Pages Deploy"
+  short_description: "Set up Cloudflare Pages deployment"
+  default_prompt: "Use $cloudflare-pages-deploy to set up Cloudflare Pages deployment for this repository."

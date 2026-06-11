@@ -13,6 +13,7 @@ C:\Users\fengbo\Developer\godot\Godot_v4.6.2-stable_win64_console.exe --headless
 
 - Cloudflare Pages GitHub Actions workflow: `Docs/CLOUDFLARE_PAGES_WORKFLOW.md`
 - Cloudflare Zero Trust / Access setup guide: `Docs/CLOUDFLARE_ZERO_TRUST_ACCESS_GUIDE.md`
+- Reusable Codex Cloudflare Pages deployment skill: `skills/cloudflare-pages-deploy/`
 - Existing GitHub Pages preview workflow remains separate in `.github/workflows/web-preview.yml`.
 
 ## Current Slice
