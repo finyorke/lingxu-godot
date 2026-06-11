@@ -3,6 +3,7 @@ name: Cloudflare Pages Direct Upload
 on:
   pull_request:
   push:
+    # If the production branch is not main, update this list as well as CLOUDFLARE_PRODUCTION_BRANCH.
     branches: [main]
   workflow_dispatch:
     inputs:

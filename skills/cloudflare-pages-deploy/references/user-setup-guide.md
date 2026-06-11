@@ -102,6 +102,7 @@ https://github.com/<owner>/<repo>/settings/variables/actions
 1. 打开 `https://github.com/<owner>/<repo>/settings/variables/actions/new`。
 2. `Name` 填：`CLOUDFLARE_PRODUCTION_BRANCH`。
 3. `Value` 填 production branch 名称，例如 `master` 或 `release`。
+4. 同步修改 workflow 里的 `on.push.branches`，否则 push 自动部署仍然只监听 `main`。
 
 ## Direct Upload 运行后的解释
 

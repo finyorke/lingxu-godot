@@ -57,6 +57,8 @@ Recommend:
 - `CLOUDFLARE_PROJECT_NAME` as an optional GitHub Actions variable only when overriding the repo-name default.
 - `CLOUDFLARE_PRODUCTION_BRANCH` as an optional variable only when the production branch is not `main`.
 
+If the production branch is not `main`, also update the workflow trigger `on.push.branches`; setting `CLOUDFLARE_PRODUCTION_BRANCH` only affects Pages project creation and summary output.
+
 ## Token Scope
 
 For Pages Direct Upload, prefer an account-owned Cloudflare API token when the user has permission to create one. Required permission:
