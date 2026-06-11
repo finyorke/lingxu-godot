@@ -26,7 +26,7 @@ Cloudflare 侧 Pages 项目不需要提前手动创建。workflow 会在部署�
 
 - Project name：`lingxu-godot`
 - Production branch：`main`
-- 如果要保护 preview，需要继续使用 Cloudflare Zero Trust / Access 配置。Access application 和 policy 不在每次游戏发布时重建。
+- 如果要保护 preview、production `*.pages.dev` 或 custom domain，需要继续使用 Cloudflare Zero Trust / Access 配置，具体步骤见 `Docs/CLOUDFLARE_ZERO_TRUST_ACCESS_GUIDE.md`。Access application 和 policy 不在每次游戏发布时重建。
 
 如果 API token 可以看到多个 Cloudflare account，workflow 不会猜测使用哪一个；这种情况下需要显式配置 `CLOUDFLARE_ACCOUNT_ID`。
 
@@ -98,6 +98,8 @@ GitHub 配置链接：
 如果推荐链接提示你没有权限创建 Account API Token，使用兜底 User API Token 链接。Cloudflare 当前 template URL 格式要求 user token 链接带 `accountId=*` 和 `zoneId=all`；打开后仍然要在表单里核对权限，并在可选的 Resources / Scope 区域把 Account Resources 收窄到目标 account。User token 链接同样只负责预填表单，创建后也要把复制到的值保存为 GitHub secret `CLOUDFLARE_API_TOKEN`。
 
 这个 token 只负责解析 account、自动创建 Pages 项目、上传 Pages 部署。Zero Trust / Access 的 application 和 policy 建议作为基础设施单独管理，不要放到每次游戏发布 workflow 里。
+
+如果需要 agent 自动创建或更新 Access application / policy，不要给这个 Pages deploy token 追加 Zero Trust 权限。请按 `Docs/CLOUDFLARE_ZERO_TRUST_ACCESS_GUIDE.md` 创建单独的 Access 管理 token。
 
 ## 如何获取 Cloudflare Account ID
 
@@ -188,4 +190,5 @@ Cloudflare Pages 单个站点文件限制是 25 MiB。工作流在上传前会�
 - Cloudflare Accounts API: https://developers.cloudflare.com/api/resources/accounts/methods/list/
 - Cloudflare Pages Create Project API: https://developers.cloudflare.com/api/resources/pages/subresources/projects/methods/create/
 - Cloudflare Pages limits: https://developers.cloudflare.com/pages/platform/limits/
+- Cloudflare Zero Trust / Access 配置指南: `Docs/CLOUDFLARE_ZERO_TRUST_ACCESS_GUIDE.md`
 - GitHub Actions secrets: https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets
