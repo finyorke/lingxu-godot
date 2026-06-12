@@ -7,12 +7,13 @@
 ## 触发规则
 
 - `push` 到 `main`：自动部署 production，对应 `https://lingxu-godot.pages.dev/`。
-- `pull_request`：同仓库 PR 自动部署 preview，Cloudflare branch 使用 `pr-<PR number>`。
-- `workflow_dispatch`：可以在 GitHub Actions 页面手动运行。可选填写 `cloudflare_branch`，用于手动指定 Cloudflare Pages 分支名。
+- `push` tag，且 tag 名匹配 `v*`：自动部署可追踪 preview，Cloudflare branch 使用 `tag-<sanitized tag>`，例如 `v0.3.0` 会部署到 `tag-v0-3-0.lingxu-godot.pages.dev`。
+- `pull_request`：只构建、smoke test、导出 Web 包并检查 Cloudflare 文件大小限制，不自动部署 Cloudflare Pages preview。
+- `workflow_dispatch`：按需手动部署 preview。可以填写 `deploy_ref` 指定要构建的 Git ref / SHA，并必须填写 `preview_alias` 指定 Cloudflare preview alias，例如 `staging`、`pr-12`、`demo-20260612`。
 
-注意：GitHub 不会把 repository secrets 暴露给来自 fork 的 PR。fork PR 仍会构建和检查包体积，但不会自动部署 preview；需要维护者在可信分支上重跑或用手动 workflow dispatch 发布。
+这个策略的目标是节省 Cloudflare Pages Free plan 的 500 builds/month 额度：agent 可以频繁开 PR 和 push，PR 默认只消耗 GitHub Actions 构建；只有合并到 `main`、推送版本 tag、或手动按需 preview 时才消耗 Cloudflare Pages 部署次数。
 
-如果仓库还没有配置 Cloudflare secrets，同仓库 PR 会给出 warning 并跳过 preview deploy，避免引入 workflow 的 PR 被配置缺失挡住。`push main` 和手动部署仍会在缺配置时失败，并在 Actions summary 里提示需要补哪些值。
+如果仓库还没有配置 Cloudflare secrets，PR 构建不受影响，因为 PR 不执行部署。`push main`、`push tag v*` 和手动部署会在缺配置时失败，并在 Actions summary 里提示需要补哪些值。
 
 ## 使用前需要的权限和配置
 
@@ -152,6 +153,17 @@ POST /client/v4/accounts/<account_id>/pages/projects
 
 创建成功后，同一次 workflow 会继续执行 `wrangler pages deploy build/web --project-name <project_name> --branch <branch>`。所以首次部署只需要提前配置 `CLOUDFLARE_API_TOKEN`；account 无法唯一解析时再补 `CLOUDFLARE_ACCOUNT_ID`。
 
+## 版本追踪策略
+
+不要为每个普通 commit 自动部署 preview alias。每次 Cloudflare 部署本身都会产生不可变 hash URL，workflow 也会把 GitHub Actions run 和 commit 信息写入导出的 `version.json`；长期需要给用户试玩或回溯的版本，用 `v*` tag 或手动 preview alias 固定下来。
+
+当前推荐用法：
+
+- 日常 PR：只看 Actions 是否通过，不自动部署。
+- 需要线上验收的 PR：手动运行 `Cloudflare Pages` workflow，`deploy_ref` 填 PR 分支、commit SHA 或 tag，`preview_alias` 填 `pr-<编号>` 或其他可读名称。
+- 长期版本：推送 `v0.3.0` 这类 tag，自动生成 `tag-v0-3-0` preview alias。
+- 生产版本：合并到 `main` 后自动部署到 production。
+
 ## 文件大小提醒
 
 Cloudflare Pages 单个站点文件限制是 25 MiB。工作流在上传前会扫描 `build/web`：
@@ -177,7 +189,11 @@ Cloudflare Pages 单个站点文件限制是 25 MiB。工作流在上传前会�
 2. 进入 `Actions`。
 3. 选择 `Cloudflare Pages`。
 4. 点击 `Run workflow`。
-5. 留空 `cloudflare_branch` 时，使用当前分支名；填写 `main` 会部署 production，填写 `pr-123` 这样的名字会部署对应 preview branch。
+5. 在 GitHub 的 workflow 分支选择器里选择运行 workflow 的基础分支，通常选 `main`。
+6. `deploy_ref` 可选：填写要构建的分支名、tag 或 commit SHA；留空时使用上一步选择的 workflow ref。
+7. `preview_alias` 必填：填写 Cloudflare preview alias，例如 `staging`、`pr-123`、`demo-20260612`。workflow 会把大小写和非字母数字字符规范化成可用于 preview 子域名的形式。
+
+手动部署只用于 preview。production 由 `push main` 自动发布；需要重发 production 时，优先重新运行 `main` 对应的 push workflow，或者合并一个明确的发布提交。
 
 ## 参考文档
 
