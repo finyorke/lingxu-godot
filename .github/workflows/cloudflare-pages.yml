@@ -4,17 +4,21 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
-      cloudflare_branch:
-        description: Optional Cloudflare Pages branch name. Leave empty to use main, the current branch, or pr-<number>.
+      deploy_ref:
+        description: Optional Git ref or SHA to build. Leave empty to use the selected workflow ref.
         required: false
+        type: string
+      preview_alias:
+        description: Required Cloudflare preview alias, for example staging, pr-12, or demo-20260612.
+        required: true
         type: string
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 concurrency:
   group: cloudflare-pages-${{ github.event.pull_request.number || github.ref }}
@@ -29,6 +33,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.deploy_ref || github.ref }}
 
       - name: Install Godot and export templates
         run: |
@@ -97,11 +103,37 @@ jobs:
         run: godot --headless --script tests/smoke.gd
 
       - name: Export Web build
+        env:
+          DEPLOY_REF: ${{ github.event.inputs.deploy_ref || '' }}
         run: |
           rm -rf build/web
           mkdir -p build/web
           godot --headless --export-release Web build/web/index.html
-          echo "${GITHUB_SHA}" > build/web/version.txt
+          checkout_commit="$(git rev-parse HEAD)"
+          echo "${checkout_commit}" > build/web/version.txt
+          CHECKOUT_COMMIT="${checkout_commit}" python3 - <<'PY'
+          import json
+          import os
+
+          repository = os.environ["GITHUB_REPOSITORY"]
+          run_id = os.environ["GITHUB_RUN_ID"]
+          metadata = {
+              "commit": os.environ["CHECKOUT_COMMIT"],
+              "workflow_sha": os.environ["GITHUB_SHA"],
+              "deploy_ref": os.environ["DEPLOY_REF"] or None,
+              "ref": os.environ["GITHUB_REF"],
+              "ref_name": os.environ["GITHUB_REF_NAME"],
+              "event": os.environ["GITHUB_EVENT_NAME"],
+              "repository": repository,
+              "run_id": run_id,
+              "run_number": os.environ["GITHUB_RUN_NUMBER"],
+              "run_url": f"https://github.com/{repository}/actions/runs/{run_id}",
+          }
+
+          with open("build/web/version.json", "w", encoding="utf-8") as handle:
+              json.dump(metadata, handle, ensure_ascii=False, indent=2)
+              handle.write("\n")
+          PY
 
       - name: Prepare Cloudflare Pages asset handling
         shell: bash
@@ -192,10 +224,20 @@ jobs:
           path: build/web
           retention-days: 7
 
+      - name: Summarize pull request policy
+        if: github.event_name == 'pull_request'
+        run: |
+          {
+            echo "## Cloudflare Pages deployment"
+            echo
+            echo "Pull requests only run build, smoke test, export, and Cloudflare file-size checks."
+            echo "No Cloudflare Pages deployment is created automatically for PRs. Use workflow_dispatch with a preview alias when a playable preview is needed."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    if: github.event_name != 'pull_request'
     steps:
       - name: Download Web build artifact
         uses: actions/download-artifact@v4
@@ -207,21 +249,58 @@ jobs:
         id: branch
         shell: bash
         env:
-          MANUAL_BRANCH: ${{ github.event.inputs.cloudflare_branch || '' }}
-          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          PREVIEW_ALIAS: ${{ github.event.inputs.preview_alias || '' }}
         run: |
           set -euo pipefail
 
-          if [ -n "$MANUAL_BRANCH" ]; then
-            branch="$MANUAL_BRANCH"
-          elif [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            branch="pr-${PR_NUMBER}"
-          else
+          sanitize_branch() {
+            local raw="$1"
+            local sanitized
+            sanitized="$(
+              printf '%s' "$raw" \
+                | tr '[:upper:]' '[:lower:]' \
+                | sed -E 's/[^a-z0-9]+/-/g' \
+                | sed -E 's/^-+//' \
+                | sed -E 's/-+$//' \
+                | sed -E 's/-+/-/g'
+            )"
+
+            if [ -z "$sanitized" ]; then
+              echo "::error title=Invalid Cloudflare preview alias::The resolved Cloudflare Pages branch is empty after sanitizing '${raw}'."
+              exit 1
+            fi
+
+            printf '%s' "$sanitized"
+          }
+
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF_TYPE}" = "branch" ]; then
             branch="${GITHUB_REF_NAME}"
+            deployment_kind="production"
+          elif [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            branch="$(sanitize_branch "tag-${GITHUB_REF_NAME}")"
+            deployment_kind="tag preview"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            if [ -z "$PREVIEW_ALIAS" ]; then
+              echo "::error title=Missing preview alias::Manual Cloudflare Pages preview deployments require the preview_alias input."
+              exit 1
+            fi
+
+            branch="$(sanitize_branch "$PREVIEW_ALIAS")"
+            deployment_kind="manual preview"
+          else
+            echo "::error title=Unsupported Cloudflare deployment event::${GITHUB_EVENT_NAME} ${GITHUB_REF_TYPE}"
+            exit 1
           fi
 
           echo "name=${branch}" >> "$GITHUB_OUTPUT"
-          echo "Cloudflare Pages branch: ${branch}" >> "$GITHUB_STEP_SUMMARY"
+          echo "kind=${deployment_kind}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Cloudflare Pages target"
+            echo
+            echo "- Type: ${deployment_kind}"
+            echo "- Branch / alias: ${branch}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Resolve Cloudflare deployment configuration
         id: config
@@ -234,23 +313,19 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          missing_annotation="error"
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            missing_annotation="warning"
-          fi
 
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "::${missing_annotation} title=Missing GitHub secret::Set CLOUDFLARE_API_TOKEN in Settings > Secrets and variables > Actions."
+            echo "::error title=Missing GitHub secret::Set CLOUDFLARE_API_TOKEN in Settings > Secrets and variables > Actions."
             missing=1
           fi
 
           if [ -z "$CLOUDFLARE_PROJECT_NAME" ]; then
-            echo "::${missing_annotation} title=Missing GitHub variable::Set CLOUDFLARE_PROJECT_NAME, or keep the default project name lingxu-godot."
+            echo "::error title=Missing GitHub variable::Set CLOUDFLARE_PROJECT_NAME, or keep the default project name lingxu-godot."
             missing=1
           fi
 
           if [ -z "$CLOUDFLARE_PRODUCTION_BRANCH" ]; then
-            echo "::${missing_annotation} title=Missing GitHub variable::Set CLOUDFLARE_PRODUCTION_BRANCH, or keep the default production branch main."
+            echo "::error title=Missing GitHub variable::Set CLOUDFLARE_PRODUCTION_BRANCH, or keep the default production branch main."
             missing=1
           fi
 
@@ -272,11 +347,6 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
 
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-              echo "::warning title=Cloudflare deploy skipped::Configure CLOUDFLARE_API_TOKEN to enable PR preview deployments."
-              exit 0
-            fi
-
             exit 1
           fi
 
@@ -432,6 +502,37 @@ jobs:
 
           echo "configured=true" >> "$GITHUB_OUTPUT"
 
+      - name: Record deployment metadata
+        if: steps.config.outputs.configured == 'true'
+        shell: bash
+        env:
+          CLOUDFLARE_BRANCH: ${{ steps.branch.outputs.name }}
+          DEPLOYMENT_KIND: ${{ steps.branch.outputs.kind }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("build/web/version.json")
+          if path.exists():
+              with path.open(encoding="utf-8") as handle:
+                  metadata = json.load(handle)
+          else:
+              metadata = {}
+
+          metadata["cloudflare"] = {
+              "project": os.environ["CLOUDFLARE_PROJECT_NAME"],
+              "branch": os.environ["CLOUDFLARE_BRANCH"],
+              "deployment_kind": os.environ["DEPLOYMENT_KIND"],
+          }
+
+          with path.open("w", encoding="utf-8") as handle:
+              json.dump(metadata, handle, ensure_ascii=False, indent=2)
+              handle.write("\n")
+          PY
+
       - name: Deploy to Cloudflare Pages
         if: steps.config.outputs.configured == 'true'
         id: deploy
@@ -462,45 +563,3 @@ jobs:
               echo "- URL: Check the Wrangler output above."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Comment preview URL on pull request
-        if: github.event_name == 'pull_request' && steps.deploy.outputs.url != ''
-        uses: actions/github-script@v7
-        env:
-          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
-          CLOUDFLARE_BRANCH: ${{ steps.branch.outputs.name }}
-        with:
-          script: |
-            const marker = '<!-- cloudflare-pages-preview -->';
-            const body = [
-              marker,
-              `Cloudflare Pages preview for \`${process.env.CLOUDFLARE_BRANCH}\`: ${process.env.DEPLOYMENT_URL}`,
-            ].join('\n');
-
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            const comments = await github.rest.issues.listComments({
-              owner,
-              repo,
-              issue_number,
-              per_page: 100,
-            });
-            const existing = comments.data.find((comment) =>
-              comment.user.type === 'Bot' && comment.body.includes(marker)
-            );
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner,
-                repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number,
-                body,
-              });
-            }
